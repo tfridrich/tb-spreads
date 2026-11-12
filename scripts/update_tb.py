@@ -2,8 +2,9 @@
 Daily update of the market data shown on the site, for Austria (AT) and Germany-Luxembourg (DE_LU).
 
 From the ENTSO-E Transparency Platform API it fetches:
-  - SDAC day-ahead prices                 -> TB1/TB2/TB4 spreads, daily base/peak prices,
-                                             and the latest days at full resolution
+  - SDAC day-ahead prices                 -> TB1/TB2/TB4 spreads, the full price history
+                                             (one file per country and year), and price
+                                             statistics per day, week, month and year
   - FCR and aFRR capacity prices          -> daily average EUR/MW/h (aFRR up and down)
   - aFRR activated energy prices          -> daily average EUR/MWh (up and down)
 
@@ -16,6 +17,9 @@ Usage:
 Only the Python standard library is used.
 """
 import argparse
+import io
+import traceback
+import zipfile
 import datetime as dt
 import json
 import os
@@ -33,8 +37,10 @@ from zoneinfo import ZoneInfo
 API_URL = "https://web-api.tp.entsoe.eu/api"
 MARKET_TZ = ZoneInfo("Europe/Vienna")  # same clock as Berlin; delivery days follow CET/CEST
 DATA_DIR = Path(__file__).resolve().parent.parent / "docs" / "data"
-TB_FILE, DA_FILE, RECENT_FILE, BAL_FILE = (DATA_DIR / n for n in
-    ("tb_daily.json", "da_daily.json", "da_recent.json", "balancing_daily.json"))
+TB_FILE, STATS_FILE, RECENT_FILE, BAL_FILE = (DATA_DIR / n for n in
+    ("tb_daily.json", "da_stats.json", "da_recent.json", "balancing_daily.json"))
+PRICE_DIR = DATA_DIR / "prices"           # prices/<zone>_<year>.json: {"days": {date: [minutes, [prices...]]}}
+NATIVE_15MIN_FROM = dt.date(2025, 10, 1)  # SDAC trades 15-minute products from this day
 REFRESH_DAYS = 5      # re-fetch the last few stored days in case ENTSO-E corrected them
 RECENT_DAYS = 8       # days kept at full resolution for the "latest days" chart
 BALANCING_START = dt.date(2024, 1, 1)
@@ -106,6 +112,24 @@ def fetch_xml(token, params, retries=3):
         time.sleep(5 * (attempt + 1))
 
 
+def xml_roots(content):
+    """ENTSO-E answers with one XML document or, for some balancing queries, a ZIP of several."""
+    if not content:
+        return []
+    if content[:2] == b"PK":
+        with zipfile.ZipFile(io.BytesIO(content)) as z:
+            blobs = [z.read(n) for n in z.namelist() if n.lower().endswith(".xml")]
+    else:
+        blobs = [content]
+    roots = []
+    for b in blobs:
+        try:
+            roots.append(ET.fromstring(b))
+        except ET.ParseError as e:
+            print(f"  warning: could not read an ENTSO-E answer ({e}); skipped.")
+    return roots
+
+
 def parse_series(xml_bytes, value_tag, keep=lambda ts, find: True):
     """Parse an ENTSO-E market document into {key: {utc_slot: value}} on a 15-minute grid.
 
@@ -114,12 +138,15 @@ def parse_series(xml_bytes, value_tag, keep=lambda ts, find: True):
     type A03 a missing position repeats the previous value. The first value seen for a slot wins.
     """
     out = defaultdict(dict)
-    if not xml_bytes:
-        return out
-    root = ET.fromstring(xml_bytes)
+    for root in xml_roots(xml_bytes):
+        _parse_series_root(root, value_tag, keep, out)
+    return out
+
+
+def _parse_series_root(root, value_tag, keep, out):
     ns = root.tag.split("}")[0] + "}" if root.tag.startswith("{") else ""
     if root.tag.endswith("Acknowledgement_MarketDocument"):
-        return out
+        return
     for ts in root.iter(f"{ns}TimeSeries"):
         find = lambda tag: (lambda el: el.text.strip() if el is not None and el.text else None)(ts.find(f"{ns}{tag}"))
         if not keep(ts, find):
@@ -148,7 +175,6 @@ def parse_series(xml_bytes, value_tag, keep=lambda ts, find: True):
                 t0 = start + dt.timedelta(minutes=step * i)
                 for q in range(max(1, step // 15)):
                     out[key].setdefault(t0 + dt.timedelta(minutes=15 * q), values[i])
-    return out
 
 
 def daily_mean(slots, first_day, last_day, min_slots=80):
@@ -168,7 +194,7 @@ def sdac_only(ts, find):
 
 
 def fetch_day_ahead(token, zone, first_day, last_day):
-    """Return {date: prices dict} with TB row, base/peak row and the native price slots."""
+    """Return TB rows per day and the price slots at their published resolution."""
     eic = BIDDING_ZONE[zone]
     native = {}
     for s, e in chunks(first_day, last_day, 360):
@@ -183,27 +209,105 @@ def fetch_day_ahead(token, zone, first_day, last_day):
     for h, ps in hours.items():
         loc = h.astimezone(MARKET_TZ)
         days[loc.date()].append((loc.hour, sum(ps) / len(ps)))
-    tb, da = {}, {}
+    tb = {}
     for d, hp in days.items():
         if not (first_day <= d <= last_day) or len(hp) < 23:
             continue  # complete delivery days only (23/24/25 h)
         s = sorted(p for _, p in hp)
         mean = lambda a: sum(a) / len(a)
         tb[d.isoformat()] = [d.isoformat()] + [round(mean(s[-x:]) - mean(s[:x]), 2) for x in (1, 2, 4)] + [round(mean(s), 2)]
-        peak = [p for h, p in hp if 8 <= h < 20] if d.weekday() < 5 else []
-        da[d.isoformat()] = [d.isoformat(), round(mean(s), 2), round(mean(peak), 2) if peak else None]
-    return tb, da, native
+    return tb, native
+
+
+# ---------------------------------------------------------------- price history and statistics
+
+def load_prices(zone):
+    """All stored days for a zone: {date_str: (minutes, [prices])}."""
+    out = {}
+    for f in sorted(PRICE_DIR.glob(f"{zone}_*.json")):
+        out.update({d: (v[0], v[1]) for d, v in json.loads(f.read_text())["days"].items()})
+    return out
+
+
+def store_prices(zone, native, first_day, last_day):
+    """Write complete delivery days from `native` into the per-year files. Returns days written."""
+    by_day = defaultdict(list)
+    for t, p in native.items():
+        by_day[t.astimezone(MARKET_TZ).date()].append((t, p))
+    years = defaultdict(dict)
+    for d, items in by_day.items():
+        if not (first_day <= d <= last_day):
+            continue
+        items.sort()
+        start, end = day_bounds_utc(d, d)
+        hours = (end - start).total_seconds() / 3600
+        step = min((b[0] - a[0]).total_seconds() / 60 for a, b in zip(items, items[1:])) if len(items) > 1 else 60
+        if len(items) * step / 60 < hours:  # incomplete day
+            continue
+        years[d.year][d.isoformat()] = [int(step), [round(p, 2) for _, p in items]]
+    PRICE_DIR.mkdir(parents=True, exist_ok=True)
+    written = 0
+    for y, days in years.items():
+        f = PRICE_DIR / f"{zone}_{y}.json"
+        data = json.loads(f.read_text()) if f.exists() else {"zone": zone, "year": y, "days": {}}
+        for d, v in days.items():
+            if data["days"].get(d) != v:
+                data["days"][d] = v; written += 1
+        data["days"] = dict(sorted(data["days"].items()))
+        f.write_text(json.dumps(data, separators=(",", ":")))
+    return written
+
+
+def first_hourly_day_after_switch(zone):
+    """Earliest stored day from Oct 2025 on that is still hourly (to be replaced by 15-min data)."""
+    days = [d for d, (m, _) in load_prices(zone).items() if d >= NATIVE_15MIN_FROM.isoformat() and m == 60]
+    return dt.date.fromisoformat(min(days)) if days else None
+
+
+def period_stats(values):
+    """values: list of (price, hours). Time-weighted mean, std, median, plus min, max, negative hours."""
+    w = sum(h for _, h in values)
+    mean = sum(p * h for p, h in values) / w
+    std = (sum(h * (p - mean) ** 2 for p, h in values) / w) ** 0.5
+    acc, median = 0.0, None
+    for p, h in sorted(values):
+        acc += h
+        if acc >= w / 2:
+            median = p
+            break
+    return [round(mean, 2), round(median, 2), round(min(p for p, _ in values), 2),
+            round(max(p for p, _ in values), 2), round(std, 2), round(sum(h for p, h in values if p < 0), 2)]
+
+
+def compute_stats(zone):
+    keyfn = {
+        "daily": lambda d: d.isoformat(),
+        "weekly": lambda d: (d - dt.timedelta(days=d.weekday())).isoformat(),
+        "monthly": lambda d: d.isoformat()[:7],
+        "yearly": lambda d: d.isoformat()[:4],
+    }
+    groups = {g: defaultdict(list) for g in keyfn}
+    ndays = {g: defaultdict(int) for g in keyfn}
+    for ds, (minutes, prices) in load_prices(zone).items():
+        d = dt.date.fromisoformat(ds)
+        vals = [(p, minutes / 60) for p in prices]
+        for g, f in keyfn.items():
+            groups[g][f(d)].extend(vals); ndays[g][f(d)] += 1
+    return {g: [[k, ndays[g][k]] + period_stats(v) for k, v in sorted(groups[g].items())] for g in keyfn}
 
 
 def parse_native(xml):
     """Day-ahead prices at their published resolution (not expanded to 15 minutes)."""
     out = {}
-    if not xml:
-        return out
-    root = ET.fromstring(xml)
+    for root in xml_roots(xml):
+        _parse_native_root(root, out)
+    return out
+
+
+def _parse_native_root(root, out):
     ns = root.tag.split("}")[0] + "}" if root.tag.startswith("{") else ""
     if root.tag.endswith("Acknowledgement_MarketDocument"):
-        return out
+        return
     for ts in root.iter(f"{ns}TimeSeries"):
         seq = ts.find(f"{ns}classificationSequence_AttributeInstanceComponent.position")
         if seq is not None and seq.text and seq.text.strip() != "1":
@@ -225,7 +329,6 @@ def parse_native(xml):
                 last = values[i]
                 if values[i] is not None:
                     out.setdefault(start + dt.timedelta(minutes=step * i), values[i])
-    return out
 
 
 # ---------------------------------------------------------------- balancing
@@ -305,16 +408,15 @@ def main():
     stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     tb = load(TB_FILE, {"markets": {}})
-    da = load(DA_FILE, {"markets": {}})
+    stats = {"columns": ["period", "days", "mean", "median", "min", "max", "std", "negative_hours"], "markets": {}}
     recent = load(RECENT_FILE, {"markets": {}})
     bal = load(BAL_FILE, {"columns": ["date"] + BAL_KEYS, "markets": {}, "factors": {}})
     bal.setdefault("factors", {})
     changed = 0
 
-    # ---- day-ahead: TB spreads, base/peak, latest days
+    # ---- day-ahead: TB spreads, price history, statistics, latest days
     for zone in BIDDING_ZONE:
         tb_rows = {r[0]: r for r in tb["markets"].get(zone, [])}
-        da_rows = {r[0]: r for r in da["markets"].get(zone, [])}
         if args.since:
             first = dt.date.fromisoformat(args.since)
         elif tb_rows:
@@ -322,15 +424,16 @@ def main():
         else:
             first = dt.date(2019, 1, 1)
         first = min(first, today - dt.timedelta(days=RECENT_DAYS))
-        new_tb, new_da, native = fetch_day_ahead(token, zone, first, last_day)
+        upgrade = first_hourly_day_after_switch(zone)  # one-off: replace hourly days since Oct 2025 by 15-min data
+        if upgrade:
+            first = min(first, upgrade)
+        new_tb, native = fetch_day_ahead(token, zone, first, last_day)
+        changed += store_prices(zone, native, first, last_day)
+        stats["markets"][zone] = compute_stats(zone)
         for d, row in new_tb.items():
             if tb_rows.get(d) != row:
                 tb_rows[d] = row; changed += 1
-        for d, row in new_da.items():
-            if da_rows.get(d) != row:
-                da_rows[d] = row; changed += 1
         tb["markets"][zone] = [tb_rows[d] for d in sorted(tb_rows)]
-        da["markets"][zone] = [da_rows[d] for d in sorted(da_rows)]
         if native:
             latest = max(native).astimezone(MARKET_TZ).date()
             cut = dt.datetime.combine(latest - dt.timedelta(days=RECENT_DAYS - 1), dt.time(0), MARKET_TZ)
@@ -348,18 +451,27 @@ def main():
             first = dt.date.fromisoformat(dates[-1]) - dt.timedelta(days=REFRESH_DAYS)
         else:
             first = BALANCING_START
-        fetched = {}
-        fcr = fetch_capacity(token, zone, "A52", first, last_day)
-        fetched["fcr"] = daily_mean(fcr.get("A03") or fcr.get("price") or {}, first, last_day)
-        afrr = fetch_capacity(token, zone, "A51", first, last_day)
-        fetched["afrr_cap_up"] = daily_mean(afrr.get("A01", {}), first, last_day)
-        fetched["afrr_cap_down"] = daily_mean(afrr.get("A02", {}), first, last_day)
+        fetched = {k: {} for k in BAL_KEYS}
+        try:
+            fcr = fetch_capacity(token, zone, "A52", first, last_day)
+            fetched["fcr"] = daily_mean(fcr.get("A03") or fcr.get("price") or {}, first, last_day)
+        except Exception:
+            print(f"  warning: FCR capacity for {zone} failed; kept the stored data.\n{traceback.format_exc()}")
+        try:
+            afrr = fetch_capacity(token, zone, "A51", first, last_day)
+            fetched["afrr_cap_up"] = daily_mean(afrr.get("A01", {}), first, last_day)
+            fetched["afrr_cap_down"] = daily_mean(afrr.get("A02", {}), first, last_day)
+        except Exception:
+            print(f"  warning: aFRR capacity for {zone} failed; kept the stored data.\n{traceback.format_exc()}")
         # aFRR energy: backfill from the series start if nothing is stored yet (Austria from July 2026)
         has_energy = any(r.get("afrr_en_up") is not None for r in rows.values())
         en_first = first if has_energy or args.since else BALANCING_START
-        en = fetch_afrr_energy(token, zone, en_first, today)
-        fetched["afrr_en_up"] = daily_mean(en.get("A01", {}), en_first, today, min_slots=1)
-        fetched["afrr_en_down"] = daily_mean(en.get("A02", {}), en_first, today, min_slots=1)
+        try:
+            en = fetch_afrr_energy(token, zone, en_first, today)
+            fetched["afrr_en_up"] = daily_mean(en.get("A01", {}), en_first, today, min_slots=1)
+            fetched["afrr_en_down"] = daily_mean(en.get("A02", {}), en_first, today, min_slots=1)
+        except Exception:
+            print(f"  warning: aFRR energy for {zone} failed; kept the stored data.\n{traceback.format_exc()}")
         for k in BAL_KEYS:
             fresh = {d.isoformat(): v for d, v in fetched[k].items()}
             if not fresh:
@@ -375,7 +487,7 @@ def main():
         bal["markets"][zone] = [[d] + [rows[d].get(k) for k in BAL_KEYS] for d in sorted(rows)]
         print(f"balancing {zone}: " + ", ".join(f"{k} {len(fetched[k])} days" for k in BAL_KEYS))
 
-    for obj, path in ((tb, TB_FILE), (da, DA_FILE), (recent, RECENT_FILE), (bal, BAL_FILE)):
+    for obj, path in ((tb, TB_FILE), (stats, STATS_FILE), (recent, RECENT_FILE), (bal, BAL_FILE)):
         obj["updated"] = stamp
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(obj, separators=(",", ":")))
