@@ -97,6 +97,15 @@ td.sep, th.sep { border-left: 1px solid var(--rule); }
 .panel > .lede { margin-top: 22px; }
 .panel .hero h2 { margin-bottom: 2px; }
 section.first { margin-top: 28px; }
+.picker { display: flex; flex-wrap: wrap; gap: 12px 14px; align-items: end; margin-bottom: 16px; }
+.picker label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--ink-2); }
+.picker select, .picker input { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 6px 8px; }
+.picker .presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.picker .presets button { font: inherit; font-size: 13px; background: transparent; border: 1px solid var(--rule); border-radius: 4px; color: var(--ink-2); padding: 6px 10px; cursor: pointer; }
+.picker .note { font-size: 13px; color: var(--ink-2); align-self: center; }
+.heat canvas { display: block; width: 100%; }
+.colorbar { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-2); margin-top: 8px; }
+.colorbar canvas { width: 220px; height: 10px; border-radius: 2px; }
 .notes { color: var(--ink-2); font-size: 14px; padding-left: 18px; max-width: 80ch; margin-top: 36px; }
 footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--rule); color: var(--ink-2); font-size: 14px; }
 footer ul { padding-left: 18px; max-width: 80ch; }
@@ -182,6 +191,18 @@ footer a { color: inherit; }
     <div class="table-wrap"><table id="custom-table"></table></div>
   </section>
 
+  <section class="full" id="tb-ladder">
+    <h2>TB1 to TB12 for a period</h2>
+    <p class="sub">For each day, the sum of the x most expensive hourly prices minus the sum of the x cheapest, €/MW per day: what an x-hour battery could earn with one full cycle. Dots are single days, lines the period average.</p>
+    <div class="picker" id="tb-picker"></div>
+    <div class="hero">
+      <div class="controls"><div id="tb-ladder-market"></div></div>
+      <div class="chart" id="tb-ladder-chart"></div>
+      <div class="legend" id="tb-ladder-legend"></div>
+    </div>
+    <div class="table-wrap" style="margin-top:14px"><table id="tb-ladder-table"></table></div>
+  </section>
+
   <div class="two full">
     <section id="yearly">
       <h2>Yearly averages</h2>
@@ -210,26 +231,41 @@ footer a { color: inherit; }
       <div class="legend" data-legend="markets"></div>
     </div>
     <section>
-      <h2>Base and peak prices over time</h2>
-      <p class="sub">€/MWh. Base is the average of all hours, peak the average of 08:00–20:00 on weekdays.</p>
+      <h2>Prices over time</h2>
+      <p class="sub">€/MWh. Mean, median, lowest and highest price of each day, week, month or year. Switch lines on and off below the chart.</p>
       <div class="hero" data-chart="da">
         <div class="controls" data-controls></div>
         <div class="chart"></div>
         <div class="legend" data-legend="series"></div>
       </div>
     </section>
-    <div class="two">
-      <section>
-        <h2>Yearly averages</h2>
-        <p class="sub">€/MWh. The current year runs to the latest delivery day.</p>
-        <div class="table-wrap"><table id="da-yearly"></table></div>
-      </section>
-      <section>
-        <h2>Monthly averages</h2>
-        <p class="sub">€/MWh, newest first.</p>
-        <div class="table-wrap table-scroll"><table id="da-monthly"></table></div>
-      </section>
-    </div>
+    <section>
+      <h2>Statistics per period</h2>
+      <p class="sub">Prices in €/MWh, newest first. Negative hours counts the time with a price below zero (a negative quarter-hour counts as 0.25 h).</p>
+      <div class="controls" id="stats-controls"></div>
+      <div class="table-wrap table-scroll"><table id="da-stats"></table></div>
+    </section>
+    <section id="da-period">
+      <h2>Look at a period</h2>
+      <p class="sub">Pick a month or your own dates. The charts below use the prices at the resolution they were auctioned in: hourly until September 2025, 15 minutes since October 2025.</p>
+      <div class="picker" id="da-picker"></div>
+      <div class="table-wrap"><table id="da-period-stats"></table></div>
+      <div class="hero">
+        <div class="controls"><div id="da-period-market"></div></div>
+        <h2>Daily price curves</h2>
+        <p class="sub">Each line is one day, coloured from the start (light) to the end (dark) of the period; the thick line is the average. €/MWh, Central European time.</p>
+        <div class="chart" id="da-overlay"></div>
+        <h2 style="margin-top:22px">Heatmap</h2>
+        <p class="sub">One row per day, €/MWh, Central European time. Colours run from the lowest to the highest price in the period; hover for values.</p>
+        <div class="chart heat" id="da-heatmap"></div>
+      </div>
+      <div class="hero" style="margin-top:18px">
+        <h2>Price distribution</h2>
+        <p class="sub">Hours spent in each price band, both countries.</p>
+        <div class="chart" id="da-hist"></div>
+        <div class="legend" id="da-hist-legend"></div>
+      </div>
+    </section>
   </div>
 
   <div class="panel" id="panel-bal" role="tabpanel" aria-labelledby="tab-bal" hidden>
@@ -662,8 +698,8 @@ footer a { color: inherit; }
     }
     return g;
   }
-  function chartBlock(block, { data, series, unit, title, gran = 'weekly', range = '1095' }) {
-    const st = { gran, range, zone: 'both', on: Object.fromEntries(series.map(([k]) => [k, true])) };
+  function chartBlock(block, { data, grouped, series, unit, title, gran = 'weekly', range = '1095', off = [] }) {
+    const st = { gran, range, zone: 'both', on: Object.fromEntries(series.map(([k]) => [k, !off.includes(k)])) };
     const ctr = block.querySelector('[data-controls]');
     const rangeSeg = seg('Time range', [['90', '90 days'], ['365', '1 year'], ['1095', '3 years'], ['all', 'All']], st.range, (v) => { st.range = v; draw(); });
     ctr.replaceChildren(
@@ -673,7 +709,7 @@ footer a { color: inherit; }
     const lg = block.querySelector('[data-legend=series]');
     legend(lg, marketLegend);
     series.slice().reverse().forEach(([k, l, c]) => {
-      const t = document.createElement('button'); t.type = 'button'; t.className = 'toggle'; t.setAttribute('aria-pressed', 'true');
+      const t = document.createElement('button'); t.type = 'button'; t.className = 'toggle'; t.setAttribute('aria-pressed', String(st.on[k]));
       const i = document.createElement('i'); i.className = 'sw'; i.style.background = `var(${c})`; t.append(i, l);
       t.addEventListener('click', () => {
         if (st.on[k] && Object.values(st.on).filter(Boolean).length === 1) return;
@@ -686,7 +722,7 @@ footer a { color: inherit; }
     function draw() {
       if (block.closest('.panel').hidden) return;
       let lines = MARKETS.filter((m) => st.zone === 'both' || st.zone === m.key)
-        .map((m) => ({ m, rows: aggregate(data[m.key] || [], keys, st.gran).map((r) => ({ ...r, x: PARSE[st.gran](r.key), label: LABEL[st.gran](PARSE[st.gran](r.key)) })) }));
+        .map((m) => ({ m, rows: (grouped ? (grouped[m.key]?.[st.gran] || []) : aggregate(data[m.key] || [], keys, st.gran)).map((r) => ({ ...r, x: PARSE[st.gran](r.key), label: LABEL[st.gran](PARSE[st.gran](r.key)) })) }));
       const maxX = d3.max(lines.flatMap((l) => l.rows), (r) => r.x);
       if (maxX && st.gran !== 'yearly' && st.range !== 'all') {
         const cut = maxX.getTime() - Number(st.range) * 86400000;
@@ -718,13 +754,80 @@ footer a { color: inherit; }
   const monthLabel = (k) => d3.utcFormat('%b %Y')(toDate(k + '-01'));
   const b = (t) => { const e = document.createElement('b'); e.textContent = t; return e; };
 
+  // ---------- price history (loaded per country and year when a period is picked) ----------
+  const priceCache = {};
+  function loadYear(zone, y) {
+    const k = zone + '_' + y;
+    if (!priceCache[k]) priceCache[k] = fetch(`data/prices/${k}.json`, { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : { days: {} })).catch(() => ({ days: {} }));
+    return priceCache[k];
+  }
+  async function getDays(zone, from, to) {
+    const ys = d3.range(Number(from.slice(0, 4)), Number(to.slice(0, 4)) + 1);
+    const files = await Promise.all(ys.map((y) => loadYear(zone, y)));
+    const out = [];
+    for (const f of files) for (const [date, [minutes, prices]] of Object.entries(f.days)) if (date >= from && date <= to) out.push({ date, minutes, prices });
+    return out.sort((a, b) => (a.date < b.date ? -1 : 1));
+  }
+  const addDays = (s, n) => new Date(toDate(s).getTime() + n * 86400000).toISOString().slice(0, 10);
+  // 15-minute grid for each day (hourly days repeat each value four times)
+  const quarters = (d) => (d.minutes === 15 ? d.prices : d.prices.flatMap((p) => Array(d.minutes / 15).fill(p)));
+  const hourly = (d) => (d.minutes === 60 ? d.prices : d3.range(0, d.prices.length, 60 / d.minutes).map((i) => d3.mean(d.prices.slice(i, i + 60 / d.minutes))));
+  function stats(days) {
+    const v = days.flatMap((d) => d.prices.map((p) => [p, d.minutes / 60]));
+    if (!v.length) return null;
+    const w = d3.sum(v, (x) => x[1]), mean = d3.sum(v, (x) => x[0] * x[1]) / w;
+    const sorted = v.slice().sort((a, b) => a[0] - b[0]); let acc = 0, median = null;
+    for (const [p, h] of sorted) { acc += h; if (acc >= w / 2) { median = p; break; } }
+    return { days: days.length, mean, median, min: sorted[0][0], max: sorted.at(-1)[0],
+      std: Math.sqrt(d3.sum(v, (x) => x[1] * (x[0] - mean) ** 2) / w), neg: d3.sum(v, (x) => (x[0] < 0 ? x[1] : 0)) };
+  }
+
+  // Period picker: month list + own dates + quick periods
+  function periodPicker(el, lastDate, firstDate, onChange) {
+    const months = [];
+    for (let m = lastDate.slice(0, 7); m >= firstDate.slice(0, 7); ) {
+      months.push(m); const d = toDate(m + '-01'); d.setUTCMonth(d.getUTCMonth() - 1); m = d.toISOString().slice(0, 7);
+    }
+    const mk = (tag, props) => Object.assign(document.createElement(tag), props);
+    const lm = mk('label', { textContent: 'Month' }), sel = mk('select', {});
+    sel.append(mk('option', { value: '', textContent: 'Own dates' }), ...months.map((m) => mk('option', { value: m, textContent: d3.utcFormat('%B %Y')(toDate(m + '-01')) })));
+    lm.append(sel);
+    const lf = mk('label', { textContent: 'From' }), f = mk('input', { type: 'date', min: firstDate, max: lastDate });
+    const lt = mk('label', { textContent: 'To' }), t = mk('input', { type: 'date', min: firstDate, max: lastDate });
+    lf.append(f); lt.append(t);
+    const quick = mk('div', { className: 'presets' });
+    const q = (label, a, b) => { const bt = mk('button', { type: 'button', textContent: label }); bt.addEventListener('click', () => { sel.value = ''; f.value = a; t.value = b; fire(); }); quick.append(bt); };
+    q('Last 7 days', addDays(lastDate, -6), lastDate); q('Last 30 days', addDays(lastDate, -29), lastDate);
+    el.replaceChildren(lm, lf, lt, quick);
+    function fire() {
+      if (!(f.validity.valid && t.validity.valid && f.value && t.value)) return;
+      const [a, b] = f.value <= t.value ? [f.value, t.value] : [t.value, f.value];
+      onChange(a, b);
+    }
+    sel.addEventListener('change', () => {
+      if (!sel.value) return;
+      const first = sel.value + '-01', next = toDate(first); next.setUTCMonth(next.getUTCMonth() + 1);
+      f.value = first; t.value = [lastDate, addDays(next.toISOString().slice(0, 10), -1)].sort()[0]; fire();
+    });
+    [f, t].forEach((i) => i.addEventListener('change', () => { sel.value = ''; fire(); }));
+    // default: the latest complete month
+    const cur = lastDate.slice(0, 7), lastMonth = months.find((m) => m < cur) || cur;
+    sel.value = lastMonth; sel.dispatchEvent(new Event('change'));
+  }
+
+  function marketSwitch(el, onPick, withBoth = false) {
+    const opts = (withBoth ? [['both', 'Both']] : []).concat([['AT', 'Austria'], ['DE_LU', 'Germany']]);
+    el.replaceChildren(seg('Market', opts, opts[0][0], onPick));
+  }
+
   // ---------- day-ahead tab ----------
-  let drawDA, drawRecent;
-  function setupDA(daily, recent) {
-    const data = {};
-    for (const m of MARKETS) data[m.key] = (daily.markets[m.key] || []).map(([date, base, peak]) => ({ date, base, peak }));
-    drawDA = chartBlock(document.querySelector('[data-chart=da]'), { data, unit: '€/MWh', title: 'base and peak day-ahead prices',
-      series: [['base', 'Base', '--tb1'], ['peak', 'Peak', '--tb2']] });
+  let drawDA, drawRecent, drawPeriod;
+  function setupDA(st, recent) {
+    const cols = st.columns; // period, days, mean, median, min, max, std, negative_hours
+    const rows = (zone, g) => (st.markets[zone]?.[g] || []).map((r) => Object.fromEntries(cols.map((c, i) => [c === 'period' ? 'key' : c, r[i]])));
+    const grouped = {}; for (const m of MARKETS) grouped[m.key] = Object.fromEntries(['daily', 'weekly', 'monthly', 'yearly'].map((g) => [g, rows(m.key, g)]));
+    drawDA = chartBlock(document.querySelector('[data-chart=da]'), { grouped, unit: '€/MWh', title: 'day-ahead price statistics',
+      series: [['mean', 'Mean', '--tb1'], ['median', 'Median', '--tb2'], ['min', 'Lowest', '--tb4'], ['max', 'Highest', '--ink-2']], off: ['min', 'max'] });
     legend(document.querySelector('#panel-da [data-legend=markets]'), marketLegend);
     drawRecent = () => {
       const el = document.getElementById('da-recent-chart');
@@ -733,12 +836,241 @@ footer a { color: inherit; }
       const lines = MARKETS.map((m) => ({ m, rows: (recent.markets[m.key] || []).map(([t, p]) => { const x = new Date(t); return { x, price: p, label: fmtT(x) }; }) }));
       lineChart(el, { lines, series: [['price', 'Price', '--tb1']], unit: '€/MWh', ticks: 'days', label: 'Day-ahead prices for the last eight delivery days, Austria solid and Germany-Luxembourg dashed' });
     };
-    table('da-yearly', 'Year', byPeriod(data, ['base', 'peak'], 'yearly', (k) => k), [['days', 'Days'], ['base', 'Base'], ['peak', 'Peak']]);
-    table('da-monthly', 'Month', byPeriod(data, ['base', 'peak'], 'monthly', monthLabel), [['days', 'Days'], ['base', 'Base'], ['peak', 'Peak']]);
-    const at = data.AT.at(-1), de = data.DE_LU.at(-1);
+    // statistics table
+    const tstate = { gran: 'monthly', zone: 'AT' };
+    const fmtKey = { daily: (k) => dayFmt(toDate(k)), weekly: (k) => 'Week of ' + dayFmt(toDate(k)), monthly: (k) => d3.utcFormat('%b %Y')(toDate(k + '-01')), yearly: (k) => k };
+    const drawTable = () => {
+      const t = document.getElementById('da-stats'); t.replaceChildren();
+      const head = t.createTHead().insertRow();
+      ['Period', 'Days', 'Mean', 'Median', 'Lowest', 'Highest', 'Std dev', 'Negative hours'].forEach((h) => { const c = document.createElement('th'); c.textContent = h; head.append(c); });
+      const body = t.createTBody();
+      for (const r of grouped[tstate.zone][tstate.gran].slice().reverse().slice(0, tstate.gran === 'daily' ? 120 : 1000)) {
+        const tr = body.insertRow(); tr.insertCell().textContent = fmtKey[tstate.gran](r.key); tr.insertCell().textContent = r.days;
+        ['mean', 'median', 'min', 'max', 'std'].forEach((k) => { tr.insertCell().textContent = fmt(r[k], 1); });
+        tr.insertCell().textContent = fmt(r.negative_hours, r.negative_hours % 1 ? 2 : 0);
+      }
+    };
+    document.getElementById('stats-controls').replaceChildren(
+      seg('Resolution', [['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['yearly', 'Yearly']], 'monthly', (v) => { tstate.gran = v; drawTable(); }),
+      seg('Market', [['AT', 'Austria'], ['DE_LU', 'Germany']], 'AT', (v) => { tstate.zone = v; drawTable(); }));
+    drawTable();
+    // lede
     const L = document.getElementById('da-lede'); L.replaceChildren();
-    L.append('On ', b(dayFmt(toDate(at.date))), ', the day-ahead base price was ', b(`€${fmt(at.base)}/MWh`), ' in Austria and ', b(`€${fmt(de.base)}/MWh`),
-      ' in Germany-Luxembourg' + (at.peak != null ? '; peak was ' : '.'), ...(at.peak != null ? [b(`€${fmt(at.peak)}`), ' and ', b(`€${fmt(de.peak)}/MWh`), '.'] : []));
+    const la = grouped.AT.daily.at(-1), ld = grouped.DE_LU.daily.at(-1);
+    L.append('On ', b(dayFmt(toDate(la.key))), ', day-ahead prices in Austria averaged ', b(`€${fmt(la.mean)}/MWh`), ` (from €${fmt(la.min)} to €${fmt(la.max)}); in Germany-Luxembourg `,
+      b(`€${fmt(ld.mean)}/MWh`), ` (from €${fmt(ld.min)} to €${fmt(ld.max)}).`);
+    // period analyses
+    const pst = { from: null, to: null, zone: 'AT' };
+    marketSwitch(document.getElementById('da-period-market'), (v) => { pst.zone = v; drawPeriod(); });
+    const first = grouped.AT.daily[0].key, last = la.key;
+    drawPeriod = async () => {
+      if (!pst.from || document.getElementById('panel-da').hidden) return;
+      const [at, de] = await Promise.all([getDays('AT', pst.from, pst.to), getDays('DE_LU', pst.from, pst.to)]);
+      periodTable(at, de); overlay(pst.zone === 'AT' ? at : de); heatmap(pst.zone === 'AT' ? at : de); histogram(at, de);
+    };
+    periodPicker(document.getElementById('da-picker'), last, first, (a, z) => { pst.from = a; pst.to = z; drawPeriod(); });
+  }
+
+  function periodTable(at, de) {
+    const t = document.getElementById('da-period-stats'); t.replaceChildren();
+    const head = t.createTHead().insertRow();
+    ['', 'Days', 'Mean', 'Median', 'Lowest', 'Highest', 'Std dev', 'Negative hours'].forEach((h) => { const c = document.createElement('th'); c.textContent = h; head.append(c); });
+    const body = t.createTBody();
+    [['Austria', at], ['Germany-Luxembourg', de]].forEach(([n, days]) => {
+      const s = stats(days), tr = body.insertRow(); tr.insertCell().textContent = n;
+      if (!s) { tr.insertCell().textContent = '0'; return; }
+      tr.insertCell().textContent = s.days;
+      ['mean', 'median', 'min', 'max', 'std'].forEach((k) => { tr.insertCell().textContent = fmt(s[k], 1); });
+      tr.insertCell().textContent = fmt(s.neg, s.neg % 1 ? 2 : 0);
+    });
+  }
+
+  function emptyMsg(el, text) { el.replaceChildren(Object.assign(document.createElement('p'), { className: 'status', textContent: text })); }
+
+  function overlay(days) {
+    const el = document.getElementById('da-overlay');
+    if (!days.length) return emptyMsg(el, 'No prices for this period.');
+    el.replaceChildren();
+    const W = Math.max(280, el.clientWidth), H = el.clientWidth < 500 ? 260 : 340;
+    const curves = days.map((d) => ({ date: d.date, pts: d.prices.map((p, i) => [i * d.minutes / 60, p]) }));
+    const q = days.map(quarters), n = d3.max(q, (a) => a.length);
+    const avg = d3.range(n).map((i) => [i / 4, d3.mean(q, (a) => a[i])]);
+    const all = curves.flatMap((c) => c.pts.map((p) => p[1]));
+    const y = d3.scaleLinear().domain([Math.min(0, d3.min(all)), d3.max(all)]).nice().range([H - 26, 8]);
+    const svg = d3.select(el).append('svg').attr('width', W).attr('height', H).attr('role', 'img').attr('aria-label', `Daily day-ahead price curves for ${days.length} days`);
+    const ya = svg.append('g').call(d3.axisLeft(y).ticks(6).tickSize(0).tickFormat(d3.format(',.0f')));
+    let ml = 0; ya.selectAll('text').each(function () { ml = Math.max(ml, this.getComputedTextLength()); }); ml = Math.ceil(ml) + 10;
+    ya.attr('transform', `translate(${ml},0)`).select('.domain').remove();
+    svg.insert('g', ':first-child').attr('transform', `translate(${ml},0)`).call(d3.axisLeft(y).ticks(6).tickSize(-(W - ml - 6)).tickFormat('')).call((g) => g.select('.domain').remove());
+    const x = d3.scaleLinear().domain([0, 24]).range([ml + 4, W - 22]);
+    svg.append('g').attr('transform', `translate(0,${H - 26})`).call(d3.axisBottom(x).ticks(W < 500 ? 6 : 12).tickFormat((h) => `${h}:00`).tickSizeOuter(0));
+    if (y.domain()[0] < 0) svg.append('line').attr('x1', ml).attr('x2', W - 6).attr('y1', y(0)).attr('y2', y(0)).attr('stroke', css('--ink-2'));
+    const col = d3.scaleSequential([0, Math.max(1, days.length - 1)], (t) => d3.interpolateYlGnBu(0.25 + 0.7 * t));
+    const line = d3.line().curve(d3.curveStepAfter).x((p) => x(p[0])).y((p) => y(p[1]));
+    svg.append('g').selectAll('path').data(curves).join('path').attr('fill', 'none').attr('stroke', (c, i) => col(i)).attr('stroke-width', days.length > 60 ? 0.6 : 1.1).attr('opacity', days.length > 60 ? 0.5 : 0.8).attr('d', (c) => line(c.pts));
+    svg.append('path').datum(avg).attr('fill', 'none').attr('stroke', css('--ink')).attr('stroke-width', 2.6).attr('d', line);
+    const tip = document.createElement('div'); tip.className = 'tip'; tip.hidden = true; el.append(tip);
+    const guide = svg.append('line').attr('y1', 8).attr('y2', H - 26).attr('stroke', css('--ink-2')).attr('stroke-dasharray', '2 3').attr('opacity', 0);
+    svg.append('rect').attr('x', ml).attr('width', W - ml).attr('height', H).attr('fill', 'transparent')
+      .on('pointermove pointerdown', (ev) => {
+        const i = Math.max(0, Math.min(n - 1, Math.floor(x.invert(d3.pointer(ev, svg.node())[0]) * 4)));
+        const vals = q.map((a) => a[i]).filter((v) => v != null);
+        guide.attr('x1', x(i / 4)).attr('x2', x(i / 4)).attr('opacity', 1);
+        const hh = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+        tip.replaceChildren(Object.assign(document.createElement('div'), { className: 'tip-date', textContent: `${hh(i * 15)}–${hh(i * 15 + 15)} · €/MWh` }));
+        const g = document.createElement('div'); g.className = 'tip-grid'; g.style.gridTemplateColumns = 'auto auto';
+        [['Average', d3.mean(vals)], ['Lowest', d3.min(vals)], ['Highest', d3.max(vals)]].forEach(([k, v]) => { g.append(Object.assign(document.createElement('div'), { textContent: k }), Object.assign(document.createElement('div'), { className: 'v', textContent: fmt(v, 2) })); });
+        tip.append(g); tip.hidden = false;
+        const px = x(i / 4), tw = tip.offsetWidth; tip.style.left = (px + 14 + tw > W ? Math.max(0, px - tw - 14) : px + 14) + 'px';
+      })
+      .on('pointerleave', () => { tip.hidden = true; guide.attr('opacity', 0); });
+  }
+
+  function heatmap(days) {
+    const el = document.getElementById('da-heatmap');
+    if (!days.length) return emptyMsg(el, 'No prices for this period.');
+    el.replaceChildren();
+    const q = days.map(quarters), n = d3.max(q, (a) => a.length);
+    const vals = q.flat();
+    const color = d3.scaleSequential([d3.min(vals), d3.max(vals)], d3.interpolateViridis);
+    const W = Math.max(280, el.clientWidth), ml = 64, mb = 24, mr = 18;
+    const rowH = Math.max(3, Math.min(18, Math.floor(420 / days.length))), H = rowH * days.length + mb;
+    const dpr = window.devicePixelRatio || 1;
+    const cv = document.createElement('canvas'); cv.width = W * dpr; cv.height = H * dpr; cv.style.height = H + 'px';
+    cv.setAttribute('role', 'img'); cv.setAttribute('aria-label', `Heatmap of day-ahead prices for ${days.length} days`);
+    el.append(cv);
+    const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
+    const cw = (W - ml - mr) / 96;
+    q.forEach((row, r) => row.forEach((v, c) => { if (c < 96 && v != null) { ctx.fillStyle = color(v); ctx.fillRect(ml + c * cw, r * rowH, Math.ceil(cw), rowH); } }));
+    ctx.fillStyle = css('--ink-2'); ctx.font = '12px Archivo, sans-serif'; ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
+    const every = Math.ceil(16 / rowH);
+    days.forEach((d, r) => { if (r % every === 0) ctx.fillText(d3.utcFormat('%-d %b')(toDate(d.date)), ml - 6, r * rowH + rowH / 2); });
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    for (let h = 0; h <= 24; h += W < 500 ? 6 : 2) ctx.fillText(`${h}:00`, ml + h * 4 * cw, days.length * rowH + 6);
+    // colour bar
+    const bar = document.createElement('div'); bar.className = 'colorbar';
+    const bc = document.createElement('canvas'); bc.width = 220; bc.height = 10; const bx = bc.getContext('2d');
+    for (let i = 0; i < 220; i++) { bx.fillStyle = d3.interpolateViridis(i / 219); bx.fillRect(i, 0, 1, 10); }
+    bar.append(`€${fmt(color.domain()[0], 0)}`, bc, `€${fmt(color.domain()[1], 0)}/MWh`); el.append(bar);
+    const tip = document.createElement('div'); tip.className = 'tip'; tip.hidden = true; el.append(tip);
+    cv.addEventListener('pointermove', (ev) => {
+      const rect = cv.getBoundingClientRect(), mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+      const r = Math.floor(my / rowH), c = Math.floor((mx - ml) / cw);
+      if (r < 0 || r >= days.length || c < 0 || c >= 96 || q[r][c] == null) { tip.hidden = true; return; }
+      const hh = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+      const step = days[r].minutes, m0 = Math.floor(c * 15 / step) * step;
+      tip.textContent = `${dayFmt(toDate(days[r].date))}, ${hh(m0)}–${hh(m0 + step)}: €${fmt(q[r][c], 2)}/MWh`;
+      tip.hidden = false; tip.style.top = Math.max(0, my - 40) + 'px';
+      const tw = tip.offsetWidth; tip.style.left = (mx + 14 + tw > W ? Math.max(0, mx - tw - 14) : mx + 14) + 'px';
+    });
+    cv.addEventListener('pointerleave', () => { tip.hidden = true; });
+  }
+
+  function histogram(at, de) {
+    const el = document.getElementById('da-hist');
+    const sets = [['AT', at, '--tb1', null], ['DE_LU', de, '--tb2', '4 3']].filter(([, d]) => d.length);
+    if (!sets.length) return emptyMsg(el, 'No prices for this period.');
+    el.replaceChildren();
+    const vals = sets.flatMap(([, d]) => d.flatMap((x) => x.prices));
+    const [lo, hi] = d3.extent(vals);
+    const width = [5, 10, 20, 25, 50, 100].find((w) => (hi - lo) / w <= 80) || 200;
+    const x0 = Math.floor(lo / width) * width, x1 = Math.ceil((hi + 1e-9) / width) * width;
+    const edges = d3.range(x0, x1 + width / 2, width);
+    const bins = sets.map(([k, days, c, dash]) => {
+      const h = new Array(edges.length - 1).fill(0);
+      for (const d of days) for (const p of d.prices) h[Math.min(h.length - 1, Math.floor((p - x0) / width))] += d.minutes / 60;
+      return { k, c, dash, h };
+    });
+    const W = Math.max(280, el.clientWidth), H = el.clientWidth < 500 ? 240 : 300;
+    const y = d3.scaleLinear().domain([0, d3.max(bins, (b) => d3.max(b.h)) * 1.05]).nice().range([H - 26, 8]);
+    const svg = d3.select(el).append('svg').attr('width', W).attr('height', H).attr('role', 'img').attr('aria-label', 'Distribution of day-ahead prices');
+    const ya = svg.append('g').call(d3.axisLeft(y).ticks(5).tickSize(0).tickFormat(d3.format(',.0f')));
+    let ml = 0; ya.selectAll('text').each(function () { ml = Math.max(ml, this.getComputedTextLength()); }); ml = Math.ceil(ml) + 10;
+    ya.attr('transform', `translate(${ml},0)`).select('.domain').remove();
+    svg.insert('g', ':first-child').attr('transform', `translate(${ml},0)`).call(d3.axisLeft(y).ticks(5).tickSize(-(W - ml - 6)).tickFormat('')).call((g) => g.select('.domain').remove());
+    const x = d3.scaleLinear().domain([x0, x1]).range([ml + 4, W - 8]);
+    svg.append('g').attr('transform', `translate(0,${H - 26})`).call(d3.axisBottom(x).ticks(W < 500 ? 5 : 10).tickFormat((v) => `€${d3.format(',')(v)}`).tickSizeOuter(0));
+    bins.forEach((b, bi) => {
+      if (bi === 0) {
+        svg.append('g').selectAll('rect').data(b.h).join('rect').attr('x', (v, i) => x(edges[i]) + 0.5).attr('width', Math.max(1, x(edges[1]) - x(edges[0]) - 1))
+          .attr('y', (v) => y(v)).attr('height', (v) => y(0) - y(v)).attr('fill', css(b.c)).attr('opacity', 0.55);
+      } else {
+        const pts = b.h.flatMap((v, i) => [[edges[i], v], [edges[i + 1], v]]);
+        svg.append('path').datum(pts).attr('fill', 'none').attr('stroke', css(b.c)).attr('stroke-width', 1.8).attr('stroke-dasharray', b.dash)
+          .attr('d', d3.line().x((p) => x(p[0])).y((p) => y(p[1])));
+      }
+    });
+    svg.append('text').attr('x', ml + 6).attr('y', 18).attr('fill', css('--ink-2')).attr('font-size', 12).text(`Hours per €${width} band`);
+    const tip = document.createElement('div'); tip.className = 'tip'; tip.hidden = true; el.append(tip);
+    svg.append('rect').attr('x', ml).attr('width', W - ml).attr('height', H).attr('fill', 'transparent')
+      .on('pointermove pointerdown', (ev) => {
+        const mx = d3.pointer(ev, svg.node())[0], i = Math.floor((x.invert(mx) - x0) / width);
+        if (i < 0 || i >= edges.length - 1) { tip.hidden = true; return; }
+        tip.replaceChildren(Object.assign(document.createElement('div'), { className: 'tip-date', textContent: `€${edges[i]} to €${edges[i + 1]}/MWh` }));
+        bins.forEach((b) => tip.append(Object.assign(document.createElement('div'), { textContent: `${b.k === 'AT' ? 'Austria' : 'Germany-Luxembourg'}: ${fmt(b.h[i], b.h[i] % 1 ? 2 : 0)} h` })));
+        tip.hidden = false; const tw = tip.offsetWidth; tip.style.left = (mx + 14 + tw > W ? Math.max(0, mx - tw - 14) : mx + 14) + 'px';
+      })
+      .on('pointerleave', () => { tip.hidden = true; });
+    legend(document.getElementById('da-hist-legend'), [{ label: 'Austria (bars)', color: '--tb1' }, { label: 'Germany-Luxembourg (dashed outline)', color: '--tb2' }]);
+  }
+
+  // ---------- TB1 to TB12 for a period (TB tab) ----------
+  let drawLadder;
+  function setupLadder(first, last) {
+    const lst = { from: null, to: null, zone: 'both' };
+    marketSwitch(document.getElementById('tb-ladder-market'), (v) => { lst.zone = v; drawLadder(); }, true);
+    const X = d3.range(1, 13);
+    const ladder = (d) => { const s = hourly(d).slice().sort((a, b) => a - b); return X.map((x) => d3.sum(s.slice(-x)) - d3.sum(s.slice(0, x))); };
+    drawLadder = async () => {
+      const el = document.getElementById('tb-ladder-chart');
+      if (!lst.from || el.closest('.panel').hidden) return;
+      const zones = MARKETS.filter((m) => lst.zone === 'both' || lst.zone === m.key);
+      const data = await Promise.all(zones.map(async (m) => ({ m, days: (await getDays(m.key, lst.from, lst.to)).map((d) => ({ date: d.date, v: ladder(d) })) })));
+      const color = { AT: '--tb1', DE_LU: '--tb2' };
+      data.forEach((z) => { z.avg = X.map((x, i) => d3.mean(z.days, (d) => d.v[i])); });
+      if (!data.some((z) => z.days.length)) return emptyMsg(el, 'No prices for this period.');
+      el.replaceChildren();
+      const W = Math.max(280, el.clientWidth), H = el.clientWidth < 500 ? 280 : 360;
+      const y = d3.scaleLinear().domain([0, d3.max(data, (z) => d3.max(z.days, (d) => d3.max(d.v))) * 1.05 || 1]).nice().range([H - 30, 8]);
+      const svg = d3.select(el).append('svg').attr('width', W).attr('height', H).attr('role', 'img').attr('aria-label', 'TB1 to TB12 aggregated spreads for the selected period');
+      const ya = svg.append('g').call(d3.axisLeft(y).ticks(6).tickSize(0).tickFormat(d3.format(',.0f')));
+      let ml = 0; ya.selectAll('text').each(function () { ml = Math.max(ml, this.getComputedTextLength()); }); ml = Math.ceil(ml) + 10;
+      ya.attr('transform', `translate(${ml},0)`).select('.domain').remove();
+      svg.insert('g', ':first-child').attr('transform', `translate(${ml},0)`).call(d3.axisLeft(y).ticks(6).tickSize(-(W - ml - 6)).tickFormat('')).call((g) => g.select('.domain').remove());
+      const x = d3.scalePoint().domain(X).range([ml + 18, W - 14]);
+      svg.append('g').attr('transform', `translate(0,${H - 30})`).call(d3.axisBottom(x).tickFormat((v) => `TB${v}`).tickSizeOuter(0));
+      const off = (zi) => (data.length > 1 ? (zi ? 5 : -5) : 0);
+      data.forEach((z, zi) => {
+        svg.append('g').selectAll('circle').data(z.days.flatMap((d) => d.v.map((v, i) => [X[i], v]))).join('circle')
+          .attr('cx', (p) => x(p[0]) + off(zi)).attr('cy', (p) => y(p[1])).attr('r', 2.2).attr('fill', css(color[z.m.key])).attr('opacity', 0.28);
+      });
+      data.forEach((z, zi) => {
+        svg.append('path').datum(z.avg).attr('fill', 'none').attr('stroke', css(color[z.m.key])).attr('stroke-width', 2.4).attr('stroke-dasharray', z.m.dash)
+          .attr('d', d3.line().x((v, i) => x(X[i]) + off(zi)).y((v) => y(v)));
+        svg.append('g').selectAll('circle').data(z.avg).join('circle').attr('cx', (v, i) => x(X[i]) + off(zi)).attr('cy', (v) => y(v)).attr('r', 4)
+          .attr('fill', z.m.dash ? css('--surface') : css(color[z.m.key])).attr('stroke', css(color[z.m.key])).attr('stroke-width', 2);
+      });
+      const tip = document.createElement('div'); tip.className = 'tip'; tip.hidden = true; el.append(tip);
+      svg.append('rect').attr('x', ml).attr('width', W - ml).attr('height', H).attr('fill', 'transparent')
+        .on('pointermove pointerdown', (ev) => {
+          const mx = d3.pointer(ev, svg.node())[0], i = d3.minIndex(X, (v) => Math.abs(x(v) - mx));
+          tip.replaceChildren(Object.assign(document.createElement('div'), { className: 'tip-date', textContent: `TB${X[i]} · €/MW per day` }));
+          data.forEach((z) => tip.append(Object.assign(document.createElement('div'), { textContent: `${z.m.name}: average ${fmt(z.avg[i], 0)}, range ${fmt(d3.min(z.days, (d) => d.v[i]), 0)} to ${fmt(d3.max(z.days, (d) => d.v[i]), 0)}` })));
+          tip.hidden = false; const tw = tip.offsetWidth; tip.style.left = (mx + 14 + tw > W ? Math.max(0, mx - tw - 14) : mx + 14) + 'px';
+        })
+        .on('pointerleave', () => { tip.hidden = true; });
+      legend(document.getElementById('tb-ladder-legend'), [...data.map((z) => ({ label: `${z.m.name}: days (dots) and average (line)`, color: color[z.m.key] })), ...marketLegend.filter((l) => data.some((z) => z.m.name === l.label))]);
+      // table: average per TBx, € per MW per day and per MWh
+      const t = document.getElementById('tb-ladder-table'); t.replaceChildren();
+      const head = t.createTHead().insertRow();
+      ['', ...X.map((v) => `TB${v}`)].forEach((h) => { const c = document.createElement('th'); c.textContent = h; head.append(c); });
+      const body = t.createTBody();
+      data.forEach((z) => {
+        const r1 = body.insertRow(); r1.insertCell().textContent = `${z.m.name}, €/MW per day`; z.avg.forEach((v) => { r1.insertCell().textContent = fmt(v, 0); });
+        const r2 = body.insertRow(); r2.insertCell().textContent = `${z.m.name}, €/MWh`; z.avg.forEach((v, i) => { r2.insertCell().textContent = fmt(v / X[i], 1); });
+      });
+    };
+    periodPicker(document.getElementById('tb-picker'), last, first, (a, z) => { lst.from = a; lst.to = z; drawLadder(); });
   }
 
   // ---------- balancing tab ----------
@@ -761,14 +1093,19 @@ footer a { color: inherit; }
   }
 
   function redraw(key) {
-    if (key === 'da') { drawRecent && drawRecent(); drawDA && drawDA(); }
+    if (key === 'da') { drawRecent && drawRecent(); drawDA && drawDA(); drawPeriod && drawPeriod(); }
+    if (key === 'tb') { drawLadder && drawLadder(); }
     if (key === 'bal') { drawCap && drawCap(); drawEn && drawEn(); }
   }
-  let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { redraw('da'); redraw('bal'); }, 150); });
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { redraw('da'); redraw('bal'); });
+  let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { redraw('tb'); redraw('da'); redraw('bal'); }, 150); });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { redraw('tb'); redraw('da'); redraw('bal'); });
 
   const get = (f) => fetch('data/' + f, { cache: 'no-cache' }).then((r) => { if (!r.ok) throw new Error(`${f}: HTTP ${r.status}`); return r.json(); });
-  Promise.all([get('da_daily.json'), get('da_recent.json')]).then(([d, r]) => { setupDA(d, r); redraw('da'); })
+  Promise.all([get('da_stats.json'), get('da_recent.json')]).then(([d, r]) => {
+    setupDA(d, r);
+    const days = d.markets.AT.daily; setupLadder(days[0][0], days.at(-1)[0]);
+    redraw('da'); redraw('tb');
+  })
     .catch((e) => { document.getElementById('da-lede').textContent = `The day-ahead data could not be loaded (${e.message}).`; });
   get('balancing_daily.json').then((d) => { setupBal(d); redraw('bal'); })
     .catch((e) => { document.getElementById('bal-lede').textContent = `The balancing data could not be loaded (${e.message}).`; });
