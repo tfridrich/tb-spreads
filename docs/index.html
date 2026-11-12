@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Day-ahead TB spreads · Austria and Germany</title>
-<meta name="description" content="Daily, weekly, monthly and yearly TB1, TB2 and TB4 day-ahead price spreads for Austria and Germany-Luxembourg, updated every day from ENTSO-E.">
+<title>Day-ahead and balancing prices · Austria and Germany</title>
+<meta name="description" content="TB1, TB2 and TB4 spreads, day-ahead prices and FCR/aFRR balancing prices for Austria and Germany-Luxembourg, updated every day from ENTSO-E.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..700&display=swap" rel="stylesheet">
@@ -35,6 +35,7 @@
   --tb1: #4DB3DB; --tb2: #E2A54A; --tb4: #A98EE0; --focus: #4DB3DB; color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Archivo", system-ui, sans-serif; font-size: 16px; line-height: 1.5; font-variant-numeric: tabular-nums; }
 .wrap { max-width: 1120px; margin: 0 auto; padding: 40px var(--gutter) 56px; }
@@ -59,6 +60,9 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
 .legend { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 14px; color: var(--ink-2); padding: 8px 0 4px; }
 .legend span { display: inline-flex; align-items: center; gap: 8px; }
 .legend svg line { stroke-width: 2.5; }
+.toggle { font: inherit; font-size: 14px; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 999px; padding: 3px 11px 3px 9px; display: inline-flex; align-items: center; gap: 2px; cursor: pointer; }
+.toggle[aria-pressed="false"] { color: var(--ink-2); background: transparent; border-style: dashed; }
+.toggle[aria-pressed="false"] .sw { opacity: .25; }
 .tip { position: absolute; top: 8px; pointer-events: none; background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; box-shadow: 0 6px 18px rgb(0 0 0 / 0.12); padding: 8px 10px; font-size: 13px; white-space: nowrap; z-index: 2; }
 .tip-date { color: var(--ink-2); margin-bottom: 4px; }
 .tip-grid { display: grid; grid-template-columns: auto auto auto; gap: 1px 14px; }
@@ -87,6 +91,13 @@ td.sep, th.sep { border-left: 1px solid var(--rule); }
 .range input { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 6px 8px; }
 .range .presets { display: flex; flex-wrap: wrap; gap: 6px; }
 .range .presets button { font: inherit; font-size: 13px; background: transparent; border: 1px solid var(--rule); border-radius: 4px; color: var(--ink-2); padding: 6px 10px; cursor: pointer; }
+.tabs { display: flex; gap: 4px; margin: 22px 0 0; border-bottom: 1px solid var(--rule); overflow-x: auto; }
+.tabs button { font: inherit; font-size: 15px; font-weight: 520; background: none; border: 0; border-bottom: 3px solid transparent; color: var(--ink-2); padding: 8px 14px 9px; margin-bottom: -1px; cursor: pointer; white-space: nowrap; }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+.panel > .lede { margin-top: 22px; }
+.panel .hero h2 { margin-bottom: 2px; }
+section.first { margin-top: 28px; }
+.notes { color: var(--ink-2); font-size: 14px; padding-left: 18px; max-width: 80ch; margin-top: 36px; }
 footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--rule); color: var(--ink-2); font-size: 14px; }
 footer ul { padding-left: 18px; max-width: 80ch; }
 footer a { color: inherit; }
@@ -103,10 +114,16 @@ footer a { color: inherit; }
 <body>
 <div class="wrap">
   <header>
-    <h1>Day-ahead TB spreads, Austria and Germany</h1>
-    <p class="lede" id="lede">Loading the latest prices…</p>
+    <h1>Day-ahead and balancing prices, Austria and Germany</h1>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button type="button" role="tab" id="tab-tb" aria-controls="panel-tb" aria-selected="true">TB spreads</button>
+      <button type="button" role="tab" id="tab-da" aria-controls="panel-da" aria-selected="false" tabindex="-1">Day-ahead prices</button>
+      <button type="button" role="tab" id="tab-bal" aria-controls="panel-bal" aria-selected="false" tabindex="-1">FCR and aFRR</button>
+    </nav>
   </header>
 
+  <div class="panel" id="panel-tb" role="tabpanel" aria-labelledby="tab-tb">
+  <p class="lede" id="lede">Loading the latest prices…</p>
   <div class="hero" id="trend">
     <div class="controls">
       <div class="seg" role="group" aria-label="Resolution">
@@ -129,9 +146,9 @@ footer a { color: inherit; }
     </div>
     <div class="chart" id="chart"><p class="status">Loading…</p></div>
     <div class="legend">
-      <span><i class="sw" style="background:var(--tb1)"></i>TB1</span>
-      <span><i class="sw" style="background:var(--tb2)"></i>TB2</span>
-      <span><i class="sw" style="background:var(--tb4)"></i>TB4</span>
+      <button type="button" class="toggle" data-series="tb1" aria-pressed="true"><i class="sw" style="background:var(--tb1)"></i>TB1</button>
+      <button type="button" class="toggle" data-series="tb2" aria-pressed="true"><i class="sw" style="background:var(--tb2)"></i>TB2</button>
+      <button type="button" class="toggle" data-series="tb4" aria-pressed="true"><i class="sw" style="background:var(--tb4)"></i>TB4</button>
       <span><svg width="26" height="6" aria-hidden="true"><line x1="0" y1="3" x2="26" y2="3" style="stroke:var(--ink-2)"/></svg>Austria</span>
       <span><svg width="26" height="6" aria-hidden="true"><line x1="0" y1="3" x2="26" y2="3" style="stroke:var(--ink-2)" stroke-dasharray="5 3"/></svg>Germany-Luxembourg</span>
     </div>
@@ -177,15 +194,79 @@ footer a { color: inherit; }
       <div class="table-wrap table-scroll"><table id="monthly-table"></table></div>
     </section>
   </div>
+  <ul class="notes full">
+    <li>TBx for a day is the average of the x most expensive hourly day-ahead prices minus the average of the x cheapest, in €/MWh. Multiply by x for €/MW per day, which is one full cycle of an x-hour battery.</li>
+    <li>Since the switch to 15-minute products on 1 October 2025, quarter-hours are averaged to hourly prices first, so the series stays comparable with earlier years.</li>
+    <li>This is a theoretical ceiling: perfect foresight, no round-trip losses, one cycle per day.</li>
+  </ul>
+  </div>
+
+  <div class="panel" id="panel-da" role="tabpanel" aria-labelledby="tab-da" hidden>
+    <p class="lede" id="da-lede">Loading the latest prices…</p>
+    <div class="hero">
+      <h2>The last eight delivery days</h2>
+      <p class="sub">Day-ahead prices at the resolution they were auctioned in, €/MWh.</p>
+      <div class="chart" id="da-recent-chart"></div>
+      <div class="legend" data-legend="markets"></div>
+    </div>
+    <section>
+      <h2>Base and peak prices over time</h2>
+      <p class="sub">€/MWh. Base is the average of all hours, peak the average of 08:00–20:00 on weekdays.</p>
+      <div class="hero" data-chart="da">
+        <div class="controls" data-controls></div>
+        <div class="chart"></div>
+        <div class="legend" data-legend="series"></div>
+      </div>
+    </section>
+    <div class="two">
+      <section>
+        <h2>Yearly averages</h2>
+        <p class="sub">€/MWh. The current year runs to the latest delivery day.</p>
+        <div class="table-wrap"><table id="da-yearly"></table></div>
+      </section>
+      <section>
+        <h2>Monthly averages</h2>
+        <p class="sub">€/MWh, newest first.</p>
+        <div class="table-wrap table-scroll"><table id="da-monthly"></table></div>
+      </section>
+    </div>
+  </div>
+
+  <div class="panel" id="panel-bal" role="tabpanel" aria-labelledby="tab-bal" hidden>
+    <p class="lede" id="bal-lede">Loading the latest prices…</p>
+    <section class="first">
+      <h2>Capacity prices</h2>
+      <p class="sub">What batteries and other units are paid for keeping power available, €/MW per hour. Daily averages of the auction results.</p>
+      <div class="hero" data-chart="cap">
+        <div class="controls" data-controls></div>
+        <div class="chart"></div>
+        <div class="legend" data-legend="series"></div>
+      </div>
+    </section>
+    <section>
+      <h2>aFRR energy prices</h2>
+      <p class="sub">What activated aFRR energy is paid, €/MWh. Daily averages of the quarter-hours in which aFRR was activated. Down-regulation prices are often negative, meaning the provider pays.</p>
+      <div class="hero" data-chart="en">
+        <div class="controls" data-controls></div>
+        <div class="chart"></div>
+        <div class="legend" data-legend="series"></div>
+      </div>
+    </section>
+    <section>
+      <h2>Monthly averages</h2>
+      <p class="sub">Capacity in €/MW/h, energy in €/MWh, newest first.</p>
+      <div class="table-wrap table-scroll"><table id="bal-monthly"></table></div>
+    </section>
+    <ul class="notes">
+      <li>FCR is paid for capacity only; it has no separate energy price.</li>
+      <li>FCR and aFRR capacity are auctioned daily in six 4-hour blocks. For Germany the price of the four German control areas is used (they are normally identical; where they differ, the highest).</li>
+      <li>German aFRR energy is the cross-border PICASSO price published for the TenneT control area. Austrian aFRR energy is APG's "local selection" price, which ENTSO-E publishes from July 2026 only.</li>
+    </ul>
+  </div>
 
   <footer>
     <p id="updated"></p>
-    <ul class="full">
-      <li>TBx for a day is the average of the x most expensive hourly day-ahead prices minus the average of the x cheapest, in €/MWh. Multiply by x for €/MW per day, which is one full cycle of an x-hour battery.</li>
-      <li>Prices are the SDAC day-ahead auction for the AT and DE-LU bidding zones from the <a href="https://transparency.entsoe.eu/">ENTSO-E Transparency Platform</a>. Since the switch to 15-minute products on 1 October 2025, quarter-hours are averaged to hourly prices first, so the series stays comparable with earlier years.</li>
-      <li>Delivery days follow Central European time; daylight-saving days have 23 or 25 hours.</li>
-      <li>This is a theoretical ceiling: perfect foresight, no round-trip losses, one cycle per day.</li>
-    </ul>
+    <p class="full">All data from the <a href="https://transparency.entsoe.eu/">ENTSO-E Transparency Platform</a>: the SDAC day-ahead auction for the AT and DE-LU bidding zones, and the balancing data of the Austrian and German grid operators. Delivery days follow Central European time; daylight-saving days have 23 or 25 hours.</p>
   </footer>
 </div>
 
@@ -200,7 +281,7 @@ footer a { color: inherit; }
     { key: 'DE_LU', name: 'Germany-Luxembourg', short: 'DE-LU', dash: '5 3' },
   ];
   const SERIES = [['tb1', 'TB1', '--tb1'], ['tb2', 'TB2', '--tb2'], ['tb4', 'TB4', '--tb4']];
-  const state = { gran: 'weekly', range: '1095', zone: 'both' };
+  const state = { gran: 'weekly', range: '1095', zone: 'both', on: { tb1: true, tb2: true, tb4: true } };
   const fmt = (v) => (v == null || !Number.isFinite(v) ? '—' : d3.format(',.1f')(v));
   const dayFmt = d3.utcFormat('%-d %b %Y');
   const toDate = (s) => new Date(s + 'T00:00:00Z');
@@ -230,13 +311,14 @@ footer a { color: inherit; }
     const parse = { daily: toDate, weekly: toDate, monthly: (k) => toDate(k + '-01'), yearly: (k) => toDate(k + '-01-01') }[state.gran];
     let lines = markets.map((m) => ({ m, rows: agg[m.key][state.gran].map((r) => ({ ...r, x: parse(r.key) })) }));
     const maxX = d3.max(lines.flatMap((l) => l.rows), (r) => r.x);
-    if ((state.gran === 'daily' || state.gran === 'weekly') && state.range !== 'all') {
+    if (state.gran !== 'yearly' && state.range !== 'all') {
       const cut = maxX.getTime() - Number(state.range) * 86400000;
       lines = lines.map((l) => ({ ...l, rows: l.rows.filter((r) => r.x.getTime() >= cut) }));
     }
     const all = lines.flatMap((l) => l.rows);
     const W = Math.max(280, el.clientWidth), H = el.clientWidth < 500 ? 280 : 360;
-    const y = d3.scaleLinear().domain([0, (d3.max(all, (r) => r.tb1) || 1) * 1.05]).nice().range([H - 26, 8]);
+    const ACTIVE = SERIES.filter(([k]) => state.on[k]);
+    const y = d3.scaleLinear().domain([0, (d3.max(all, (r) => d3.max(ACTIVE, ([k]) => r[k])) || 1) * 1.05]).nice().range([H - 26, 8]);
     const svg = d3.select(el).append('svg').attr('width', W).attr('height', H).attr('role', 'img')
       .attr('aria-label', `${state.gran} TB1, TB2 and TB4 day-ahead spreads in euros per MWh for ${markets.map((m) => m.name).join(' and ')}`);
     const yAxis = svg.append('g').call(d3.axisLeft(y).ticks(6).tickSize(0).tickFormat(d3.format(',.0f')));
@@ -254,7 +336,7 @@ footer a { color: inherit; }
     else { const mo = Math.max(1, Math.round(spanYears * 12)); ticks = d3.utcMonth.every([1, 2, 3, 6, 12].find((k) => mo / k <= room) || 12); tf = d3.utcFormat('%b %y'); }
     svg.append('g').attr('transform', `translate(0,${H - 26})`).call(d3.axisBottom(x).ticks(ticks).tickSizeOuter(0).tickFormat(tf));
     for (const l of lines) {
-      SERIES.forEach(([k, , c]) => {
+      ACTIVE.forEach(([k, , c]) => {
         svg.append('path').datum(l.rows).attr('fill', 'none').attr('stroke', css(c))
           .attr('stroke-width', state.gran === 'daily' ? 1.1 : 1.9).attr('stroke-dasharray', l.m.dash)
           .attr('d', d3.line().x((r) => x(r.x)).y((r) => y(r[k])));
@@ -280,7 +362,7 @@ footer a { color: inherit; }
       const g = document.createElement('div'); g.className = 'tip-grid'; g.style.gridTemplateColumns = 'auto' + ' auto'.repeat(lines.length);
       const cell = (t, cls) => { const c = document.createElement('div'); if (cls) c.className = cls; c.textContent = t; g.append(c); };
       cell(''); lines.forEach((l) => cell(l.m.short, 'h'));
-      SERIES.forEach(([k, name, c]) => {
+      ACTIVE.forEach(([k, name, c]) => {
         const nameCell = document.createElement('div');
         const sw = document.createElement('i'); sw.className = 'sw'; sw.style.background = `var(${c})`;
         nameCell.append(sw, document.createTextNode(name)); g.append(nameCell);
@@ -382,8 +464,13 @@ footer a { color: inherit; }
   const press = (attr, val) => document.querySelectorAll(`[data-${attr}]`).forEach((b) => b.setAttribute('aria-pressed', String(b.dataset[attr] === val)));
   document.querySelectorAll('[data-gran]').forEach((b) => b.addEventListener('click', () => {
     state.gran = b.dataset.gran; press('gran', state.gran);
-    document.getElementById('range-seg').hidden = state.gran === 'monthly' || state.gran === 'yearly';
+    document.getElementById('range-seg').hidden = state.gran === 'yearly';
     drawChart();
+  }));
+  document.querySelectorAll('#trend [data-series]').forEach((b) => b.addEventListener('click', () => {
+    const k = b.dataset.series;
+    if (state.on[k] && Object.values(state.on).filter(Boolean).length === 1) return; // keep at least one line
+    state.on[k] = !state.on[k]; b.setAttribute('aria-pressed', String(state.on[k])); drawChart();
   }));
   document.querySelectorAll('[data-zone]').forEach((b) => b.addEventListener('click', () => { state.zone = b.dataset.zone; press('zone', state.zone); drawChart(); }));
   document.querySelectorAll('[data-range]').forEach((b) => b.addEventListener('click', () => { state.range = b.dataset.range; press('range', state.range); drawChart(); }));
@@ -425,6 +512,271 @@ footer a { color: inherit; }
       document.getElementById('chart').replaceChildren(Object.assign(document.createElement('p'), { className: 'status', textContent: `The price data could not be loaded (${e.message}). Reload the page; if it persists, check the latest run under Actions in the GitHub repository.` }));
       document.getElementById('lede').textContent = 'Price data unavailable.';
     });
+})();
+</script>
+<script>
+(() => {
+  // ---------- tabs ----------
+  const tabs = [...document.querySelectorAll('[role=tab]')];
+  const drawn = {};
+  function selectTab(tab, focus) {
+    tabs.forEach((t) => {
+      const on = t === tab;
+      t.setAttribute('aria-selected', String(on));
+      t.tabIndex = on ? 0 : -1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+    });
+    if (focus) tab.focus();
+    const key = tab.id.replace('tab-', '');
+    history.replaceState(null, '', key === 'tb' ? location.pathname + location.search.replace(/[?&]tab=[^&]*/, '') : '#' + key);
+    redraw(key);
+  }
+  tabs.forEach((t, i) => {
+    t.addEventListener('click', () => selectTab(t));
+    t.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        selectTab(tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length], true);
+      }
+    });
+  });
+
+  // ---------- shared helpers ----------
+  const MARKETS = [
+    { key: 'AT', name: 'Austria', short: 'AT', dash: null },
+    { key: 'DE_LU', name: 'Germany-Luxembourg', short: 'DE-LU', dash: '5 3' },
+  ];
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const fmt = (v, d = 1) => (v == null || !Number.isFinite(v) ? '—' : d3.format(`,.${d}f`)(v));
+  const toDate = (s) => new Date(s + 'T00:00:00Z');
+  const dayFmt = d3.utcFormat('%-d %b %Y');
+  const weekOf = (s) => { const t = toDate(s); return new Date(t.getTime() - ((t.getUTCDay() + 6) % 7) * 86400000).toISOString().slice(0, 10); };
+  const KEYFN = { daily: (s) => s, weekly: weekOf, monthly: (s) => s.slice(0, 7), yearly: (s) => s.slice(0, 4) };
+  const PARSE = { daily: toDate, weekly: toDate, monthly: (k) => toDate(k + '-01'), yearly: (k) => toDate(k + '-01-01') };
+
+  function aggregate(rows, keys, gran) {
+    const m = new Map();
+    for (const r of rows) {
+      const k = KEYFN[gran](r.date);
+      if (!m.has(k)) m.set(k, { key: k, days: 0, s: {}, n: {} });
+      const g = m.get(k); g.days++;
+      for (const f of keys) if (r[f] != null) { g.s[f] = (g.s[f] || 0) + r[f]; g.n[f] = (g.n[f] || 0) + 1; }
+    }
+    return [...m.values()].sort((a, b) => (a.key < b.key ? -1 : 1)).map((g) => {
+      const o = { key: g.key, days: g.days };
+      for (const f of keys) o[f] = g.n[f] ? g.s[f] / g.n[f] : null;
+      return o;
+    });
+  }
+
+  function legend(el, items) {
+    el.replaceChildren();
+    for (const it of items) {
+      const sp = document.createElement('span');
+      if (it.color) { const i = document.createElement('i'); i.className = 'sw'; i.style.background = `var(${it.color})`; sp.append(i); }
+      else {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('width', 26); svg.setAttribute('height', 6); svg.setAttribute('aria-hidden', 'true');
+        const ln = document.createElementNS('http://www.w3.org/2000/svg', 'line'); ln.setAttribute('x1', 0); ln.setAttribute('y1', 3); ln.setAttribute('x2', 26); ln.setAttribute('y2', 3);
+        ln.style.stroke = 'var(--ink-2)'; ln.setAttribute('stroke-width', 2.5); if (it.dash) ln.setAttribute('stroke-dasharray', it.dash);
+        svg.append(ln); sp.append(svg);
+      }
+      sp.append(it.label); el.append(sp);
+    }
+  }
+  const marketLegend = MARKETS.map((m) => ({ label: m.name, dash: m.dash }));
+
+  // Generic line chart: lines = [{m, rows:[{x, ...}]}], series = [[key, label, cssVar]]
+  function lineChart(el, { lines, series, unit, label, ticks: tickMode }) {
+    el.replaceChildren();
+    const all = lines.flatMap((l) => l.rows);
+    const vals = all.flatMap((r) => series.map(([k]) => r[k])).filter((v) => v != null && Number.isFinite(v));
+    if (!vals.length) { const p = document.createElement('p'); p.className = 'status'; p.textContent = 'No data for this selection.'; el.append(p); return; }
+    const W = Math.max(280, el.clientWidth), H = el.clientWidth < 500 ? 260 : 330;
+    const lo = Math.min(0, d3.min(vals)), hi = d3.max(vals);
+    const y = d3.scaleLinear().domain([lo < 0 ? lo * 1.05 : 0, hi * 1.05 || 1]).nice().range([H - 26, 8]);
+    const svg = d3.select(el).append('svg').attr('width', W).attr('height', H).attr('role', 'img').attr('aria-label', label);
+    const yAxis = svg.append('g').call(d3.axisLeft(y).ticks(6).tickSize(0).tickFormat(d3.format(',.0f')));
+    let ml = 0; yAxis.selectAll('text').each(function () { ml = Math.max(ml, this.getComputedTextLength()); });
+    ml = Math.ceil(ml) + 10;
+    yAxis.attr('transform', `translate(${ml},0)`).select('.domain').remove();
+    svg.insert('g', ':first-child').attr('transform', `translate(${ml},0)`)
+      .call(d3.axisLeft(y).ticks(6).tickSize(-(W - ml - 6)).tickFormat('')).call((g) => g.select('.domain').remove());
+    if (lo < 0) svg.append('line').attr('x1', ml).attr('x2', W - 6).attr('y1', y(0)).attr('y2', y(0)).attr('stroke', css('--ink-2')).attr('stroke-width', 1);
+    const ext = d3.extent(all, (r) => r.x);
+    const x = d3.scaleUtc().domain(ext).range([ml + 4, W - 8]);
+    const room = Math.max(2, Math.floor((W - ml) / 80));
+    let ticks, tf;
+    if (tickMode === 'days') { ticks = d3.utcDay.every(Math.max(1, Math.ceil(8 / room))); tf = d3.timeFormat('%a %-d %b'); }
+    else {
+      const spanYears = (ext[1] - ext[0]) / (365.25 * 86400000);
+      if (spanYears > 2) { ticks = d3.utcYear.every(Math.max(1, Math.ceil((spanYears + 1) / room))); tf = d3.utcFormat('%Y'); }
+      else { const mo = Math.max(1, Math.round(spanYears * 12)); ticks = d3.utcMonth.every([1, 2, 3, 6, 12].find((k) => mo / k <= room) || 12); tf = d3.utcFormat('%b %y'); }
+    }
+    svg.append('g').attr('transform', `translate(0,${H - 26})`).call(d3.axisBottom(x).ticks(ticks).tickSizeOuter(0).tickFormat(tf));
+    for (const l of lines) {
+      series.forEach(([k, , c]) => {
+        svg.append('path').datum(l.rows).attr('fill', 'none').attr('stroke', css(c))
+          .attr('stroke-width', l.rows.length > 400 ? 1.1 : 1.8).attr('stroke-dasharray', l.m.dash)
+          .attr('d', d3.line().defined((r) => r[k] != null).x((r) => x(r.x)).y((r) => y(r[k])));
+        if (l.rows.length <= 30) {
+          svg.append('g').selectAll('circle').data(l.rows.filter((r) => r[k] != null)).join('circle').attr('r', 3)
+            .attr('cx', (r) => x(r.x)).attr('cy', (r) => y(r[k]))
+            .attr('fill', l.m.dash ? css('--surface') : css(c)).attr('stroke', css(c)).attr('stroke-width', 1.5);
+        }
+      });
+    }
+    const tip = document.createElement('div'); tip.className = 'tip'; tip.hidden = true; el.append(tip);
+    const guide = svg.append('line').attr('y1', 8).attr('y2', H - 26).attr('stroke', css('--ink-2')).attr('stroke-dasharray', '2 3').attr('opacity', 0);
+    const xs = [...new Set(all.map((r) => r.x.getTime()))].sort((a, b) => a - b);
+    const maps = lines.map((l) => new Map(l.rows.map((r) => [r.x.getTime(), r])));
+    const show = (ev) => {
+      const [mx] = d3.pointer(ev, svg.node());
+      const tx = xs[Math.max(0, Math.min(xs.length - 1, d3.bisectCenter(xs, x.invert(mx).getTime())))];
+      guide.attr('x1', x(tx)).attr('x2', x(tx)).attr('opacity', 1);
+      tip.replaceChildren();
+      const d = document.createElement('div'); d.className = 'tip-date'; d.textContent = `${maps[0].get(tx)?.label || maps[maps.length - 1].get(tx)?.label} · ${unit}`; tip.append(d);
+      const g = document.createElement('div'); g.className = 'tip-grid'; g.style.gridTemplateColumns = 'auto' + ' auto'.repeat(lines.length);
+      const cell = (t, cls) => { const c = document.createElement('div'); if (cls) c.className = cls; c.textContent = t; g.append(c); };
+      cell(''); lines.forEach((l) => cell(l.m.short, 'h'));
+      series.forEach(([k, name, c]) => {
+        const nc = document.createElement('div'); const sw = document.createElement('i'); sw.className = 'sw'; sw.style.background = `var(${c})`;
+        nc.append(sw, document.createTextNode(name)); g.append(nc);
+        maps.forEach((m) => cell(fmt(m.get(tx)?.[k], 2), 'v'));
+      });
+      tip.append(g); tip.hidden = false;
+      const px = x(tx), tw = tip.offsetWidth;
+      tip.style.left = (px + 14 + tw > W ? Math.max(0, px - tw - 14) : px + 14) + 'px';
+    };
+    svg.append('rect').attr('x', ml).attr('width', W - ml).attr('height', H).attr('fill', 'transparent')
+      .on('pointermove', show).on('pointerdown', show).on('pointerleave', () => { tip.hidden = true; guide.attr('opacity', 0); });
+  }
+
+  // A chart block with resolution, market and range controls
+  const LABEL = { daily: (t) => d3.utcFormat('%a %-d %b %Y')(t), weekly: (t) => 'Week of ' + dayFmt(t), monthly: d3.utcFormat('%B %Y'), yearly: d3.utcFormat('%Y') };
+  function seg(name, opts, current, onPick) {
+    const g = document.createElement('div'); g.className = 'seg'; g.setAttribute('role', 'group'); g.setAttribute('aria-label', name);
+    for (const [v, t] of opts) {
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = t; b.setAttribute('aria-pressed', String(v === current));
+      b.addEventListener('click', () => { g.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); onPick(v); });
+      g.append(b);
+    }
+    return g;
+  }
+  function chartBlock(block, { data, series, unit, title, gran = 'weekly', range = '1095' }) {
+    const st = { gran, range, zone: 'both', on: Object.fromEntries(series.map(([k]) => [k, true])) };
+    const ctr = block.querySelector('[data-controls]');
+    const rangeSeg = seg('Time range', [['90', '90 days'], ['365', '1 year'], ['1095', '3 years'], ['all', 'All']], st.range, (v) => { st.range = v; draw(); });
+    ctr.replaceChildren(
+      seg('Resolution', [['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['yearly', 'Yearly']], st.gran, (v) => { st.gran = v; rangeSeg.hidden = v === 'yearly'; draw(); }),
+      seg('Markets', [['both', 'Both'], ['AT', 'Austria'], ['DE_LU', 'Germany']], st.zone, (v) => { st.zone = v; draw(); }),
+      rangeSeg);
+    const lg = block.querySelector('[data-legend=series]');
+    legend(lg, marketLegend);
+    series.slice().reverse().forEach(([k, l, c]) => {
+      const t = document.createElement('button'); t.type = 'button'; t.className = 'toggle'; t.setAttribute('aria-pressed', 'true');
+      const i = document.createElement('i'); i.className = 'sw'; i.style.background = `var(${c})`; t.append(i, l);
+      t.addEventListener('click', () => {
+        if (st.on[k] && Object.values(st.on).filter(Boolean).length === 1) return;
+        st.on[k] = !st.on[k]; t.setAttribute('aria-pressed', String(st.on[k])); draw();
+      });
+      lg.prepend(t);
+    });
+    const el = block.querySelector('.chart');
+    const keys = series.map(([k]) => k);
+    function draw() {
+      if (block.closest('.panel').hidden) return;
+      let lines = MARKETS.filter((m) => st.zone === 'both' || st.zone === m.key)
+        .map((m) => ({ m, rows: aggregate(data[m.key] || [], keys, st.gran).map((r) => ({ ...r, x: PARSE[st.gran](r.key), label: LABEL[st.gran](PARSE[st.gran](r.key)) })) }));
+      const maxX = d3.max(lines.flatMap((l) => l.rows), (r) => r.x);
+      if (maxX && st.gran !== 'yearly' && st.range !== 'all') {
+        const cut = maxX.getTime() - Number(st.range) * 86400000;
+        lines = lines.map((l) => ({ ...l, rows: l.rows.filter((r) => r.x.getTime() >= cut) }));
+      }
+      lineChart(el, { lines, series: series.filter(([k]) => st.on[k]), unit, label: `${st.gran} ${title} for ${lines.map((l) => l.m.name).join(' and ')}` });
+    }
+    return draw;
+  }
+
+  function table(id, firstCol, rows, cols, digits = 1) {
+    // cols = [[key, label]]; rows = [{label, AT:{...}, DE_LU:{...}}]
+    const t = document.getElementById(id); t.replaceChildren();
+    const thead = t.createTHead(), r1 = thead.insertRow(), r2 = thead.insertRow();
+    const th = (row, text, cls, span) => { const c = document.createElement('th'); c.textContent = text; if (cls) c.className = cls; if (span) c.colSpan = span; row.append(c); };
+    th(r1, ''); MARKETS.forEach((m) => th(r1, m.name, 'grp sep', cols.length));
+    th(r2, firstCol); MARKETS.forEach(() => cols.forEach(([, l], i) => th(r2, l, i === 0 ? 'sep' : null)));
+    const tb = t.createTBody();
+    for (const r of rows) {
+      const tr = tb.insertRow(); tr.insertCell().textContent = r.label;
+      MARKETS.forEach((m) => cols.forEach(([k], i) => { const c = tr.insertCell(); if (i === 0) c.className = 'sep'; const v = r[m.key]?.[k]; c.textContent = k === 'days' ? (v == null ? '—' : String(v)) : fmt(v, digits); }));
+    }
+  }
+  function byPeriod(data, keys, gran, labelFn) {
+    const m = new Map();
+    for (const mk of MARKETS) for (const r of aggregate(data[mk.key] || [], keys, gran)) { if (!m.has(r.key)) m.set(r.key, { label: labelFn(r.key) }); m.get(r.key)[mk.key] = r; }
+    return [...m.values()].reverse();
+  }
+  const monthLabel = (k) => d3.utcFormat('%b %Y')(toDate(k + '-01'));
+  const b = (t) => { const e = document.createElement('b'); e.textContent = t; return e; };
+
+  // ---------- day-ahead tab ----------
+  let drawDA, drawRecent;
+  function setupDA(daily, recent) {
+    const data = {};
+    for (const m of MARKETS) data[m.key] = (daily.markets[m.key] || []).map(([date, base, peak]) => ({ date, base, peak }));
+    drawDA = chartBlock(document.querySelector('[data-chart=da]'), { data, unit: '€/MWh', title: 'base and peak day-ahead prices',
+      series: [['base', 'Base', '--tb1'], ['peak', 'Peak', '--tb2']] });
+    legend(document.querySelector('#panel-da [data-legend=markets]'), marketLegend);
+    drawRecent = () => {
+      const el = document.getElementById('da-recent-chart');
+      if (el.closest('.panel').hidden) return;
+      const fmtT = d3.timeFormat('%a %-d %b, %H:%M');
+      const lines = MARKETS.map((m) => ({ m, rows: (recent.markets[m.key] || []).map(([t, p]) => { const x = new Date(t); return { x, price: p, label: fmtT(x) }; }) }));
+      lineChart(el, { lines, series: [['price', 'Price', '--tb1']], unit: '€/MWh', ticks: 'days', label: 'Day-ahead prices for the last eight delivery days, Austria solid and Germany-Luxembourg dashed' });
+    };
+    table('da-yearly', 'Year', byPeriod(data, ['base', 'peak'], 'yearly', (k) => k), [['days', 'Days'], ['base', 'Base'], ['peak', 'Peak']]);
+    table('da-monthly', 'Month', byPeriod(data, ['base', 'peak'], 'monthly', monthLabel), [['days', 'Days'], ['base', 'Base'], ['peak', 'Peak']]);
+    const at = data.AT.at(-1), de = data.DE_LU.at(-1);
+    const L = document.getElementById('da-lede'); L.replaceChildren();
+    L.append('On ', b(dayFmt(toDate(at.date))), ', the day-ahead base price was ', b(`€${fmt(at.base)}/MWh`), ' in Austria and ', b(`€${fmt(de.base)}/MWh`),
+      ' in Germany-Luxembourg' + (at.peak != null ? '; peak was ' : '.'), ...(at.peak != null ? [b(`€${fmt(at.peak)}`), ' and ', b(`€${fmt(de.peak)}/MWh`), '.'] : []));
+  }
+
+  // ---------- balancing tab ----------
+  let drawCap, drawEn;
+  function setupBal(bal) {
+    const keys = ['fcr', 'afrr_cap_up', 'afrr_cap_down', 'afrr_en_up', 'afrr_en_down'];
+    const data = {};
+    for (const m of MARKETS) data[m.key] = (bal.markets[m.key] || []).map((r) => Object.fromEntries([['date', r[0]], ...keys.map((k, i) => [k, r[i + 1]])]));
+    drawCap = chartBlock(document.querySelector('[data-chart=cap]'), { data, unit: '€/MW/h', title: 'FCR and aFRR capacity prices',
+      series: [['fcr', 'FCR', '--tb1'], ['afrr_cap_up', 'aFRR up', '--tb2'], ['afrr_cap_down', 'aFRR down', '--tb4']], range: '365' });
+    drawEn = chartBlock(document.querySelector('[data-chart=en]'), { data, unit: '€/MWh', title: 'aFRR energy prices',
+      series: [['afrr_en_up', 'aFRR up', '--tb2'], ['afrr_en_down', 'aFRR down', '--tb4']], range: '365' });
+    table('bal-monthly', 'Month', byPeriod(data, keys, 'monthly', monthLabel),
+      [['fcr', 'FCR'], ['afrr_cap_up', 'aFRR cap. up'], ['afrr_cap_down', 'aFRR cap. down'], ['afrr_en_up', 'aFRR energy up'], ['afrr_en_down', 'aFRR energy down']]);
+    const last = (mk, k) => [...data[mk]].reverse().find((r) => r[k] != null);
+    const fa = last('AT', 'fcr'), fd = last('DE_LU', 'fcr'), ua = last('AT', 'afrr_cap_up'), ud = last('DE_LU', 'afrr_cap_up');
+    const L = document.getElementById('bal-lede'); L.replaceChildren();
+    if (fa && fd && ua && ud) L.append('For ', b(dayFmt(toDate(fa.date))), ', FCR capacity averaged ', b(`€${fmt(fa.fcr, 2)}/MW/h`), ' in Austria and ', b(`€${fmt(fd.fcr, 2)}`),
+      ' in Germany; aFRR up capacity averaged ', b(`€${fmt(ua.afrr_cap_up, 2)}`), ' and ', b(`€${fmt(ud.afrr_cap_up, 2)}/MW/h`), '.');
+  }
+
+  function redraw(key) {
+    if (key === 'da') { drawRecent && drawRecent(); drawDA && drawDA(); }
+    if (key === 'bal') { drawCap && drawCap(); drawEn && drawEn(); }
+  }
+  let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { redraw('da'); redraw('bal'); }, 150); });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { redraw('da'); redraw('bal'); });
+
+  const get = (f) => fetch('data/' + f, { cache: 'no-cache' }).then((r) => { if (!r.ok) throw new Error(`${f}: HTTP ${r.status}`); return r.json(); });
+  Promise.all([get('da_daily.json'), get('da_recent.json')]).then(([d, r]) => { setupDA(d, r); redraw('da'); })
+    .catch((e) => { document.getElementById('da-lede').textContent = `The day-ahead data could not be loaded (${e.message}).`; });
+  get('balancing_daily.json').then((d) => { setupBal(d); redraw('bal'); })
+    .catch((e) => { document.getElementById('bal-lede').textContent = `The balancing data could not be loaded (${e.message}).`; });
+
+  // open the tab named in the address (#da, #bal or ?tab=da)
+  const want = (new URLSearchParams(location.search).get('tab') || location.hash.slice(1));
+  const start = tabs.find((t) => t.id === 'tab-' + want);
+  if (start) selectTab(start);
 })();
 </script>
 </body>
