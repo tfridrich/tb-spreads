@@ -1,0 +1,76 @@
+name: Update TB spreads and publish site
+
+on:
+  schedule:
+    # Day-ahead results appear around 12:45-13:00 CET. Two runs a day catch late publications.
+    # Times are UTC: 12:17 and 15:47 UTC = 13:17 / 16:47 CET in winter, 14:17 / 17:47 CEST in summer.
+    - cron: "17 12 * * *"
+    - cron: "47 15 * * *"
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "Optional: rebuild all days from this date (YYYY-MM-DD). Leave empty for a normal update."
+        required: false
+        default: ""
+  push:
+    branches: [main]
+    paths: ["docs/**"]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: tb-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    env:
+      HAS_KEY: ${{ secrets.ENTSOE_API_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Note missing API key
+        if: env.HAS_KEY != 'true'
+        run: echo "::warning::No ENTSOE_API_KEY secret yet - publishing the stored data without fetching new prices."
+
+      - name: Fetch prices from ENTSO-E and recalculate spreads
+        if: github.event_name != 'push' && env.HAS_KEY == 'true'
+        env:
+          ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
+        run: |
+          if [ -n "${{ github.event.inputs.since }}" ]; then
+            python scripts/update_tb.py --since "${{ github.event.inputs.since }}"
+          else
+            python scripts/update_tb.py
+          fi
+
+      - name: Save updated data to the repository
+        if: github.event_name != 'push' && env.HAS_KEY == 'true'
+        run: |
+          git config user.name "tb-spread-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/data/tb_daily.json
+          if git diff --cached --quiet; then
+            echo "No new data."
+          else
+            git commit -m "Update TB spreads $(date -u +%Y-%m-%d)"
+            git push
+          fi
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - id: deploy
+        uses: actions/deploy-pages@v4
