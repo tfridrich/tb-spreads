@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Day-ahead TB spreads · Austria and Germany</title>
+<meta name="description" content="Daily, weekly, monthly and yearly TB1, TB2 and TB4 day-ahead price spreads for Austria and Germany-Luxembourg, updated every day from ENTSO-E.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<style>
+:root {
+  --bg: #F3F6F7;
+  --surface: #FFFFFF;
+  --ink: #15212B;
+  --ink-2: #51606B;
+  --rule: #D5DDE1;
+  --grid: #E4EAED;
+  --tb1: #0A6C93;
+  --tb2: #B2741A;
+  --tb4: #6A4C9C;
+  --focus: #0A6C93;
+  --gutter: 16px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101820; --surface: #16212B; --ink: #E7EDF0; --ink-2: #9AAAB5; --rule: #2A3945; --grid: #22303B;
+    --tb1: #4DB3DB; --tb2: #E2A54A; --tb4: #A98EE0; --focus: #4DB3DB; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101820; --surface: #16212B; --ink: #E7EDF0; --ink-2: #9AAAB5; --rule: #2A3945; --grid: #22303B;
+  --tb1: #4DB3DB; --tb2: #E2A54A; --tb4: #A98EE0; --focus: #4DB3DB; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Archivo", system-ui, sans-serif; font-size: 16px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 40px var(--gutter) 56px; }
+h1 { font-size: clamp(30px, 5vw, 48px); line-height: 1.05; font-weight: 640; font-stretch: 118%; letter-spacing: -0.01em; margin: 0 0 14px; max-width: 18ch; }
+h2 { font-size: 21px; line-height: 1.25; font-weight: 620; font-stretch: 110%; margin: 0 0 4px; }
+.lede { font-size: 18px; color: var(--ink-2); max-width: 62ch; margin: 0; }
+.lede b { color: var(--ink); font-weight: 600; }
+.sub { color: var(--ink-2); font-size: 14px; margin: 0 0 14px; max-width: 70ch; }
+section { margin-top: 44px; }
+.hero { margin-top: 28px; background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 18px 18px 12px; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin-bottom: 8px; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
+.seg button { font: inherit; font-size: 14px; font-stretch: 100%; background: transparent; color: var(--ink-2); border: 0; padding: 6px 12px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--rule); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.chart { position: relative; min-height: 360px; }
+.chart svg { display: block; }
+.chart .tick text { fill: var(--ink-2); font-size: 12px; font-family: inherit; }
+.chart .tick line { stroke: var(--grid); }
+.chart .domain { stroke: var(--rule); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 14px; color: var(--ink-2); padding: 8px 0 4px; }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.legend svg line { stroke-width: 2.5; }
+.tip { position: absolute; top: 8px; pointer-events: none; background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; box-shadow: 0 6px 18px rgb(0 0 0 / 0.12); padding: 8px 10px; font-size: 13px; white-space: nowrap; z-index: 2; }
+.tip-date { color: var(--ink-2); margin-bottom: 4px; }
+.tip-grid { display: grid; grid-template-columns: auto auto auto; gap: 1px 14px; }
+.tip-grid .h { color: var(--ink-2); text-align: right; }
+.tip-grid .v { text-align: right; }
+.sw { display: inline-block; width: 12px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+.latest { display: grid; grid-template-columns: minmax(150px, 1.2fr) repeat(3, minmax(80px, 1fr)); border-top: 2px solid var(--ink); }
+.latest > div { padding: 10px 8px 10px 0; border-bottom: 1px solid var(--rule); }
+.latest .colh { font-size: 14px; color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
+.latest .mkt { font-weight: 600; }
+.latest .mkt small { display: block; font-weight: 400; color: var(--ink-2); font-size: 13px; }
+.latest .num { font-size: clamp(22px, 3.4vw, 32px); font-weight: 560; font-stretch: 104%; line-height: 1.1; }
+.latest .num small { display: block; font-size: 13px; font-weight: 400; color: var(--ink-2); font-stretch: 100%; margin-top: 2px; }
+.table-wrap { overflow-x: auto; }
+.table-scroll { max-height: 420px; overflow-y: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; padding-left: 0; }
+thead th { color: var(--ink-2); font-weight: 500; background: var(--bg); position: sticky; top: 0; }
+thead tr:first-child th { border-bottom: 0; padding-bottom: 0; color: var(--ink); font-weight: 600; }
+th.grp { text-align: center; border-bottom: 1px solid var(--rule) !important; }
+td.sep, th.sep { border-left: 1px solid var(--rule); }
+.two { display: block; }
+.range { display: flex; flex-wrap: wrap; gap: 14px; align-items: end; margin-bottom: 14px; }
+.range label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--ink-2); }
+.range input { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 6px 8px; }
+.range .presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.range .presets button { font: inherit; font-size: 13px; background: transparent; border: 1px solid var(--rule); border-radius: 4px; color: var(--ink-2); padding: 6px 10px; cursor: pointer; }
+footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--rule); color: var(--ink-2); font-size: 14px; }
+footer ul { padding-left: 18px; max-width: 80ch; }
+footer a { color: inherit; }
+.status { color: var(--ink-2); padding: 40px 0; }
+.compact .wrap { padding-top: 12px; padding-bottom: 12px; }
+.compact .full { display: none; }
+@media (max-width: 560px) {
+  .wrap { padding-top: 24px; }
+  .latest { grid-template-columns: minmax(100px, 1fr) repeat(3, minmax(64px, 1fr)); }
+  .hero { padding: 12px 10px 8px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Day-ahead TB spreads, Austria and Germany</h1>
+    <p class="lede" id="lede">Loading the latest prices…</p>
+  </header>
+
+  <div class="hero" id="trend">
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Resolution">
+        <button type="button" data-gran="daily" aria-pressed="false">Daily</button>
+        <button type="button" data-gran="weekly" aria-pressed="true">Weekly</button>
+        <button type="button" data-gran="monthly" aria-pressed="false">Monthly</button>
+        <button type="button" data-gran="yearly" aria-pressed="false">Yearly</button>
+      </div>
+      <div class="seg" role="group" aria-label="Markets">
+        <button type="button" data-zone="both" aria-pressed="true">Both</button>
+        <button type="button" data-zone="AT" aria-pressed="false">Austria</button>
+        <button type="button" data-zone="DE_LU" aria-pressed="false">Germany</button>
+      </div>
+      <div class="seg" role="group" aria-label="Time range" id="range-seg">
+        <button type="button" data-range="90" aria-pressed="false">90 days</button>
+        <button type="button" data-range="365" aria-pressed="false">1 year</button>
+        <button type="button" data-range="1095" aria-pressed="true">3 years</button>
+        <button type="button" data-range="all" aria-pressed="false">All</button>
+      </div>
+    </div>
+    <div class="chart" id="chart"><p class="status">Loading…</p></div>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--tb1)"></i>TB1</span>
+      <span><i class="sw" style="background:var(--tb2)"></i>TB2</span>
+      <span><i class="sw" style="background:var(--tb4)"></i>TB4</span>
+      <span><svg width="26" height="6" aria-hidden="true"><line x1="0" y1="3" x2="26" y2="3" style="stroke:var(--ink-2)"/></svg>Austria</span>
+      <span><svg width="26" height="6" aria-hidden="true"><line x1="0" y1="3" x2="26" y2="3" style="stroke:var(--ink-2)" stroke-dasharray="5 3"/></svg>Germany-Luxembourg</span>
+    </div>
+  </div>
+
+  <section id="latest-day">
+    <h2>Latest delivery day</h2>
+    <p class="sub" id="latest-sub">€/MWh, with the 30-day average below each value.</p>
+    <div class="latest" id="latest"></div>
+  </section>
+
+  <section class="full" id="periods">
+    <h2>Averages over standard periods</h2>
+    <p class="sub">Mean of the daily spreads in €/MWh, counted back from the latest delivery day.</p>
+    <div class="table-wrap"><table id="periods-table"></table></div>
+  </section>
+
+  <section class="full" id="custom">
+    <h2>Average over your own period</h2>
+    <p class="sub">Both dates are included.</p>
+    <div class="range">
+      <label>From<input type="date" id="c-from" min="2019-01-01"></label>
+      <label>To<input type="date" id="c-to" min="2019-01-01"></label>
+      <div class="presets" aria-label="Quick periods">
+        <button type="button" data-preset="q">Last quarter</button>
+        <button type="button" data-preset="y">Last calendar year</button>
+        <button type="button" data-preset="s">Last summer (Apr–Sep)</button>
+        <button type="button" data-preset="w">Last winter (Oct–Mar)</button>
+      </div>
+    </div>
+    <div class="table-wrap"><table id="custom-table"></table></div>
+  </section>
+
+  <div class="two full">
+    <section id="yearly">
+      <h2>Yearly averages</h2>
+      <p class="sub">€/MWh. The current year runs to the latest delivery day.</p>
+      <div class="table-wrap"><table id="yearly-table"></table></div>
+    </section>
+    <section id="monthly">
+      <h2>Monthly averages</h2>
+      <p class="sub">€/MWh, newest first.</p>
+      <div class="table-wrap table-scroll"><table id="monthly-table"></table></div>
+    </section>
+  </div>
+
+  <footer>
+    <p id="updated"></p>
+    <ul class="full">
+      <li>TBx for a day is the average of the x most expensive hourly day-ahead prices minus the average of the x cheapest, in €/MWh. Multiply by x for €/MW per day, which is one full cycle of an x-hour battery.</li>
+      <li>Prices are the SDAC day-ahead auction for the AT and DE-LU bidding zones from the <a href="https://transparency.entsoe.eu/">ENTSO-E Transparency Platform</a>. Since the switch to 15-minute products on 1 October 2025, quarter-hours are averaged to hourly prices first, so the series stays comparable with earlier years.</li>
+      <li>Delivery days follow Central European time; daylight-saving days have 23 or 25 hours.</li>
+      <li>This is a theoretical ceiling: perfect foresight, no round-trip losses, one cycle per day.</li>
+    </ul>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const params = new URLSearchParams(location.search);
+  if (params.get('view') === 'compact') document.documentElement.classList.add('compact');
+  if (params.get('theme') === 'light' || params.get('theme') === 'dark') document.documentElement.dataset.theme = params.get('theme');
+
+  const MARKETS = [
+    { key: 'AT', name: 'Austria', short: 'AT', dash: null },
+    { key: 'DE_LU', name: 'Germany-Luxembourg', short: 'DE-LU', dash: '5 3' },
+  ];
+  const SERIES = [['tb1', 'TB1', '--tb1'], ['tb2', 'TB2', '--tb2'], ['tb4', 'TB4', '--tb4']];
+  const state = { gran: 'weekly', range: '1095', zone: 'both' };
+  const fmt = (v) => (v == null || !Number.isFinite(v) ? '—' : d3.format(',.1f')(v));
+  const dayFmt = d3.utcFormat('%-d %b %Y');
+  const toDate = (s) => new Date(s + 'T00:00:00Z');
+  const addDays = (s, n) => new Date(toDate(s).getTime() + n * 86400000).toISOString().slice(0, 10);
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  let daily = {}; // market -> [{date, tb1, tb2, tb4, avg}]
+  let agg = {};   // market -> {daily, weekly, monthly, yearly}
+
+  function mean(rows, k) { return rows.length ? rows.reduce((a, r) => a + r[k], 0) / rows.length : null; }
+  function group(rows, keyFn) {
+    const m = new Map();
+    for (const r of rows) { const k = keyFn(r.date); if (!m.has(k)) m.set(k, []); m.get(k).push(r); }
+    return [...m].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([key, rs]) => ({ key, days: rs.length, tb1: mean(rs, 'tb1'), tb2: mean(rs, 'tb2'), tb4: mean(rs, 'tb4') }));
+  }
+  const weekOf = (s) => { const t = toDate(s); return new Date(t.getTime() - ((t.getUTCDay() + 6) % 7) * 86400000).toISOString().slice(0, 10); };
+  function avgBetween(mkt, from, to) {
+    const rs = daily[mkt].filter((r) => r.date >= from && r.date <= to);
+    return { days: rs.length, tb1: mean(rs, 'tb1'), tb2: mean(rs, 'tb2'), tb4: mean(rs, 'tb4') };
+  }
+
+  // ---------- chart ----------
+  function drawChart() {
+    const el = document.getElementById('chart');
+    el.replaceChildren();
+    const markets = MARKETS.filter((m) => state.zone === 'both' || state.zone === m.key);
+    const parse = { daily: toDate, weekly: toDate, monthly: (k) => toDate(k + '-01'), yearly: (k) => toDate(k + '-01-01') }[state.gran];
+    let lines = markets.map((m) => ({ m, rows: agg[m.key][state.gran].map((r) => ({ ...r, x: parse(r.key) })) }));
+    const maxX = d3.max(lines.flatMap((l) => l.rows), (r) => r.x);
+    if ((state.gran === 'daily' || state.gran === 'weekly') && state.range !== 'all') {
+      const cut = maxX.getTime() - Number(state.range) * 86400000;
+      lines = lines.map((l) => ({ ...l, rows: l.rows.filter((r) => r.x.getTime() >= cut) }));
+    }
+    const all = lines.flatMap((l) => l.rows);
+    const W = Math.max(280, el.clientWidth), H = el.clientWidth < 500 ? 280 : 360;
+    const y = d3.scaleLinear().domain([0, (d3.max(all, (r) => r.tb1) || 1) * 1.05]).nice().range([H - 26, 8]);
+    const svg = d3.select(el).append('svg').attr('width', W).attr('height', H).attr('role', 'img')
+      .attr('aria-label', `${state.gran} TB1, TB2 and TB4 day-ahead spreads in euros per MWh for ${markets.map((m) => m.name).join(' and ')}`);
+    const yAxis = svg.append('g').call(d3.axisLeft(y).ticks(6).tickSize(0).tickFormat(d3.format(',.0f')));
+    let ml = 0; yAxis.selectAll('text').each(function () { ml = Math.max(ml, this.getComputedTextLength()); });
+    ml = Math.ceil(ml) + 10;
+    yAxis.attr('transform', `translate(${ml},0)`).select('.domain').remove();
+    svg.insert('g', ':first-child').attr('transform', `translate(${ml},0)`)
+      .call(d3.axisLeft(y).ticks(6).tickSize(-(W - ml - 6)).tickFormat('')).call((g) => g.select('.domain').remove());
+    const ext = d3.extent(all, (r) => r.x);
+    const x = d3.scaleUtc().domain(ext).range([ml + 4, W - 8]);
+    const spanYears = (ext[1] - ext[0]) / (365.25 * 86400000);
+    const room = Math.max(2, Math.floor((W - ml) / 80));
+    let ticks, tf;
+    if (spanYears > 2) { ticks = d3.utcYear.every(Math.max(1, Math.ceil((spanYears + 1) / room))); tf = d3.utcFormat('%Y'); }
+    else { const mo = Math.max(1, Math.round(spanYears * 12)); ticks = d3.utcMonth.every([1, 2, 3, 6, 12].find((k) => mo / k <= room) || 12); tf = d3.utcFormat('%b %y'); }
+    svg.append('g').attr('transform', `translate(0,${H - 26})`).call(d3.axisBottom(x).ticks(ticks).tickSizeOuter(0).tickFormat(tf));
+    for (const l of lines) {
+      SERIES.forEach(([k, , c]) => {
+        svg.append('path').datum(l.rows).attr('fill', 'none').attr('stroke', css(c))
+          .attr('stroke-width', state.gran === 'daily' ? 1.1 : 1.9).attr('stroke-dasharray', l.m.dash)
+          .attr('d', d3.line().x((r) => x(r.x)).y((r) => y(r[k])));
+        if (l.rows.length <= 30) {
+          svg.append('g').selectAll('circle').data(l.rows).join('circle').attr('r', 3)
+            .attr('cx', (r) => x(r.x)).attr('cy', (r) => y(r[k]))
+            .attr('fill', l.m.dash ? css('--surface') : css(c)).attr('stroke', css(c)).attr('stroke-width', 1.5);
+        }
+      });
+    }
+    // tooltip
+    const tip = document.createElement('div'); tip.className = 'tip'; tip.hidden = true; el.append(tip);
+    const guide = svg.append('line').attr('y1', 8).attr('y2', H - 26).attr('stroke', css('--ink-2')).attr('stroke-dasharray', '2 3').attr('opacity', 0);
+    const xs = [...new Set(all.map((r) => r.x.getTime()))].sort((a, b) => a - b);
+    const maps = lines.map((l) => new Map(l.rows.map((r) => [r.x.getTime(), r])));
+    const label = { daily: (t) => d3.utcFormat('%a %-d %b %Y')(t), weekly: (t) => 'Week of ' + dayFmt(t), monthly: d3.utcFormat('%B %Y'), yearly: d3.utcFormat('%Y') }[state.gran];
+    const show = (ev) => {
+      const [mx] = d3.pointer(ev, svg.node());
+      const tx = xs[Math.max(0, Math.min(xs.length - 1, d3.bisectCenter(xs, x.invert(mx).getTime())))];
+      guide.attr('x1', x(tx)).attr('x2', x(tx)).attr('opacity', 1);
+      tip.replaceChildren();
+      const d = document.createElement('div'); d.className = 'tip-date'; d.textContent = label(new Date(tx)) + ' · €/MWh'; tip.append(d);
+      const g = document.createElement('div'); g.className = 'tip-grid'; g.style.gridTemplateColumns = 'auto' + ' auto'.repeat(lines.length);
+      const cell = (t, cls) => { const c = document.createElement('div'); if (cls) c.className = cls; c.textContent = t; g.append(c); };
+      cell(''); lines.forEach((l) => cell(l.m.short, 'h'));
+      SERIES.forEach(([k, name, c]) => {
+        const nameCell = document.createElement('div');
+        const sw = document.createElement('i'); sw.className = 'sw'; sw.style.background = `var(${c})`;
+        nameCell.append(sw, document.createTextNode(name)); g.append(nameCell);
+        maps.forEach((m) => cell(fmt(m.get(tx)?.[k]), 'v'));
+      });
+      tip.append(g); tip.hidden = false;
+      const px = x(tx), tw = tip.offsetWidth;
+      tip.style.left = (px + 14 + tw > W ? Math.max(0, px - tw - 14) : px + 14) + 'px';
+    };
+    svg.append('rect').attr('x', ml).attr('width', W - ml).attr('height', H).attr('fill', 'transparent')
+      .on('pointermove', show).on('pointerdown', show).on('pointerleave', () => { tip.hidden = true; guide.attr('opacity', 0); });
+  }
+
+  // ---------- tables ----------
+  function table(id, firstCol, rows, opts = {}) {
+    const t = document.getElementById(id);
+    t.replaceChildren();
+    const thead = t.createTHead();
+    const r1 = thead.insertRow(), r2 = thead.insertRow();
+    const th = (row, text, cls, span) => { const c = document.createElement('th'); c.textContent = text; if (cls) c.className = cls; if (span) c.colSpan = span; row.append(c); };
+    const extra = opts.extraCols || [];
+    th(r1, ''); extra.forEach(() => th(r1, '')); MARKETS.forEach((m) => th(r1, m.name, 'grp sep', 4));
+    th(r2, firstCol); extra.forEach((e) => th(r2, e[0]));
+    MARKETS.forEach(() => { th(r2, 'Days', 'sep'); SERIES.forEach(([, n]) => th(r2, n)); });
+    const tb = t.createTBody();
+    for (const r of rows) {
+      const tr = tb.insertRow();
+      tr.insertCell().textContent = r.label;
+      extra.forEach((e) => { tr.insertCell().textContent = e[1](r); });
+      MARKETS.forEach((m) => {
+        const v = r[m.key];
+        const c = tr.insertCell(); c.className = 'sep'; c.textContent = v ? v.days : '—';
+        SERIES.forEach(([k]) => { tr.insertCell().textContent = v ? fmt(v[k]) : '—'; });
+      });
+    }
+  }
+
+  function render() {
+    const lastAT = daily.AT.at(-1).date, lastDE = daily.DE_LU.at(-1).date;
+    const last = lastAT < lastDE ? lastAT : lastDE;
+    // headline
+    const at = daily.AT.find((r) => r.date === last), de = daily.DE_LU.find((r) => r.date === last);
+    const at30 = avgBetween('AT', addDays(last, -29), last);
+    const lede = document.getElementById('lede');
+    lede.replaceChildren();
+    const b = (t) => { const e = document.createElement('b'); e.textContent = t; return e; };
+    const diff = at.tb2 - de.tb2;
+    lede.append('On ', b(dayFmt(toDate(last))), ', the TB2 spread for a two-hour battery was ', b(`€${fmt(at.tb2)}/MWh`),
+      ' in Austria and ', b(`€${fmt(de.tb2)}/MWh`), ' in Germany-Luxembourg. Austria was ',
+      b(`€${fmt(Math.abs(diff))}/MWh ${diff >= 0 ? 'above' : 'below'}`), ' Germany and ',
+      b(`${d3.format('.0f')(Math.abs((at.tb2 / at30.tb2 - 1) * 100))}% ${at.tb2 >= at30.tb2 ? 'above' : 'below'}`), ' its own 30-day average.');
+
+    // latest day grid
+    const L = document.getElementById('latest');
+    L.replaceChildren();
+    const add = (cls, ...kids) => { const d = document.createElement('div'); d.className = cls; d.append(...kids); L.append(d); return d; };
+    add('colh', dayFmt(toDate(last)));
+    SERIES.forEach(([, n, c]) => { const sw = document.createElement('i'); sw.className = 'sw'; sw.style.background = `var(${c})`; add('colh', sw, n); });
+    for (const m of MARKETS) {
+      const r = daily[m.key].find((d) => d.date === last), a = avgBetween(m.key, addDays(last, -29), last);
+      const name = document.createElement('div'); name.textContent = m.name;
+      const small = document.createElement('small'); small.textContent = m.dash ? 'dashed line' : 'solid line';
+      add('mkt', name, small);
+      SERIES.forEach(([k]) => { const s = document.createElement('small'); s.textContent = `30-day ${fmt(a[k])}`; add('num', fmt(r[k]), s); });
+    }
+
+    // standard periods
+    const year = Number(last.slice(0, 4));
+    const defs = [
+      ['Last 7 days', addDays(last, -6), last], ['Last 30 days', addDays(last, -29), last], ['Last 90 days', addDays(last, -89), last],
+      ['Last 365 days', addDays(last, -364), last], [`Year to date ${year}`, `${year}-01-01`, last],
+      [`Full year ${year - 1}`, `${year - 1}-01-01`, `${year - 1}-12-31`], [`All data since ${daily.AT[0].date.slice(0, 4)}`, daily.AT[0].date, last],
+    ];
+    table('periods-table', 'Period', defs.map(([label, f, t]) => ({ label, f, t, AT: avgBetween('AT', f, t), DE_LU: avgBetween('DE_LU', f, t) })),
+      { extraCols: [['From', (r) => dayFmt(toDate(r.f))], ['To', (r) => dayFmt(toDate(r.t))]] });
+
+    // yearly + monthly
+    const byKey = (gran) => { const m = new Map(); for (const mk of MARKETS) for (const r of agg[mk.key][gran]) { if (!m.has(r.key)) m.set(r.key, { label: r.key }); m.get(r.key)[mk.key] = r; } return [...m.values()].reverse(); };
+    table('yearly-table', 'Year', byKey('yearly'));
+    table('monthly-table', 'Month', byKey('monthly').map((r) => ({ ...r, label: d3.utcFormat('%b %Y')(toDate(r.label + '-01')) })));
+
+    renderCustom(last);
+    const up = window.__updated ? new Date(window.__updated) : null;
+    document.getElementById('updated').textContent = `Latest delivery day ${dayFmt(toDate(last))}.` + (up ? ` Data refreshed ${up.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/Vienna' })} (Vienna time).` : '');
+    drawChart();
+  }
+
+  function renderCustom(last) {
+    const f = document.getElementById('c-from'), t = document.getElementById('c-to');
+    f.max = t.max = last;
+    if (!f.value) f.value = addDays(last, -29);
+    if (!t.value) t.value = last;
+    if (!(f.validity.valid && t.validity.valid && f.value && t.value)) return;
+    const [a, b] = f.value <= t.value ? [f.value, t.value] : [t.value, f.value];
+    table('custom-table', 'Period', [{ label: `${dayFmt(toDate(a))} – ${dayFmt(toDate(b))}`, AT: avgBetween('AT', a, b), DE_LU: avgBetween('DE_LU', a, b) }]);
+  }
+
+  // ---------- controls ----------
+  const press = (attr, val) => document.querySelectorAll(`[data-${attr}]`).forEach((b) => b.setAttribute('aria-pressed', String(b.dataset[attr] === val)));
+  document.querySelectorAll('[data-gran]').forEach((b) => b.addEventListener('click', () => {
+    state.gran = b.dataset.gran; press('gran', state.gran);
+    document.getElementById('range-seg').hidden = state.gran === 'monthly' || state.gran === 'yearly';
+    drawChart();
+  }));
+  document.querySelectorAll('[data-zone]').forEach((b) => b.addEventListener('click', () => { state.zone = b.dataset.zone; press('zone', state.zone); drawChart(); }));
+  document.querySelectorAll('[data-range]').forEach((b) => b.addEventListener('click', () => { state.range = b.dataset.range; press('range', state.range); drawChart(); }));
+  ['c-from', 'c-to'].forEach((id) => document.getElementById(id).addEventListener('change', () => renderCustom(document.getElementById('c-to').max)));
+  document.querySelectorAll('[data-preset]').forEach((b) => b.addEventListener('click', () => {
+    const last = document.getElementById('c-to').max, y = Number(last.slice(0, 4)), mo = Number(last.slice(5, 7));
+    const f = document.getElementById('c-from'), t = document.getElementById('c-to');
+    const p = b.dataset.preset;
+    if (p === 'y') { f.value = `${y - 1}-01-01`; t.value = `${y - 1}-12-31`; }
+    if (p === 'q') {
+      const curStart = `${y}-${String(Math.floor((mo - 1) / 3) * 3 + 1).padStart(2, '0')}-01`;
+      const prevEnd = addDays(curStart, -1);
+      const pm = Number(prevEnd.slice(5, 7));
+      f.value = `${prevEnd.slice(0, 4)}-${String(pm - 2).padStart(2, '0')}-01`; t.value = prevEnd;
+    }
+    if (p === 's') { const sy = mo >= 10 ? y : y - 1; f.value = `${sy}-04-01`; t.value = `${sy}-09-30`; }
+    if (p === 'w') { const wy = mo >= 4 ? y - 1 : y - 2; f.value = `${wy}-10-01`; t.value = `${wy + 1}-03-31`; }
+    renderCustom(last);
+  }));
+  let resizeT; new ResizeObserver(() => { clearTimeout(resizeT); resizeT = setTimeout(() => daily.AT && drawChart(), 120); }).observe(document.getElementById('chart'));
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => daily.AT && drawChart());
+
+  // ---------- load ----------
+  fetch('data/tb_daily.json', { cache: 'no-cache' })
+    .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+    .then((d) => {
+      window.__updated = d.updated;
+      for (const m of MARKETS) {
+        daily[m.key] = (d.markets[m.key] || []).map(([date, tb1, tb2, tb4, avg]) => ({ date, tb1, tb2, tb4, avg }));
+        const rows = daily[m.key];
+        agg[m.key] = {
+          daily: rows.map((r) => ({ key: r.date, days: 1, tb1: r.tb1, tb2: r.tb2, tb4: r.tb4 })),
+          weekly: group(rows, weekOf), monthly: group(rows, (s) => s.slice(0, 7)), yearly: group(rows, (s) => s.slice(0, 4)),
+        };
+      }
+      render();
+    })
+    .catch((e) => {
+      document.getElementById('chart').replaceChildren(Object.assign(document.createElement('p'), { className: 'status', textContent: `The price data could not be loaded (${e.message}). Reload the page; if it persists, check the latest run under Actions in the GitHub repository.` }));
+      document.getElementById('lede').textContent = 'Price data unavailable.';
+    });
+})();
+</script>
+</body>
+</html>
