@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Day-ahead and balancing prices · Austria and Germany</title>
-<meta name="description" content="TB1, TB2 and TB4 spreads, day-ahead prices and FCR/aFRR balancing prices for Austria and Germany-Luxembourg, updated every day from ENTSO-E.">
+<meta name="description" content="TB1 to TB4 spreads, day-ahead prices and FCR/aFRR balancing prices for Austria and Germany-Luxembourg, updated every day from ENTSO-E.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..700&display=swap" rel="stylesheet">
@@ -19,6 +19,7 @@
   --grid: #E4EAED;
   --tb1: #0A6C93;
   --tb2: #B2741A;
+  --tb3: #3D8A55;
   --tb4: #6A4C9C;
   --focus: #0A6C93;
   --gutter: 16px;
@@ -27,12 +28,12 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #101820; --surface: #16212B; --ink: #E7EDF0; --ink-2: #9AAAB5; --rule: #2A3945; --grid: #22303B;
-    --tb1: #4DB3DB; --tb2: #E2A54A; --tb4: #A98EE0; --focus: #4DB3DB; color-scheme: dark;
+    --tb1: #4DB3DB; --tb2: #E2A54A; --tb3: #6CC487; --tb4: #A98EE0; --focus: #4DB3DB; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #101820; --surface: #16212B; --ink: #E7EDF0; --ink-2: #9AAAB5; --rule: #2A3945; --grid: #22303B;
-  --tb1: #4DB3DB; --tb2: #E2A54A; --tb4: #A98EE0; --focus: #4DB3DB; color-scheme: dark;
+  --tb1: #4DB3DB; --tb2: #E2A54A; --tb3: #6CC487; --tb4: #A98EE0; --focus: #4DB3DB; color-scheme: dark;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -69,10 +70,11 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
 .tip-grid .h { color: var(--ink-2); text-align: right; }
 .tip-grid .v { text-align: right; }
 .sw { display: inline-block; width: 12px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
-.latest { display: grid; grid-template-columns: minmax(150px, 1.2fr) repeat(3, minmax(80px, 1fr)); border-top: 2px solid var(--ink); }
+.latest { display: grid; grid-template-columns: minmax(150px, 1.2fr) repeat(4, minmax(80px, 1fr)); border-top: 2px solid var(--ink); }
 .latest > div { padding: 10px 8px 10px 0; border-bottom: 1px solid var(--rule); }
 .latest .colh { font-size: 14px; color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
 .latest .mkt { font-weight: 600; }
+.latest .mkt .short { display: none; }
 .latest .mkt small { display: block; font-weight: 400; color: var(--ink-2); font-size: 13px; }
 .latest .num { font-size: clamp(22px, 3.4vw, 32px); font-weight: 560; font-stretch: 104%; line-height: 1.1; }
 .latest .num small { display: block; font-size: 13px; font-weight: 400; color: var(--ink-2); font-stretch: 100%; margin-top: 2px; }
@@ -115,7 +117,13 @@ footer a { color: inherit; }
 .compact .full { display: none; }
 @media (max-width: 560px) {
   .wrap { padding-top: 24px; }
-  .latest { grid-template-columns: minmax(100px, 1fr) repeat(3, minmax(64px, 1fr)); }
+  .latest { grid-template-columns: minmax(78px, 1.1fr) repeat(4, minmax(0, 1fr)); }
+  .latest > div { padding-right: 4px; min-width: 0; }
+  .latest .num { font-size: 19px; }
+  .latest .num small { font-size: 11px; }
+  .latest .mkt { font-size: 14px; }
+  .latest .mkt .long { display: none; }
+  .latest .mkt .short { display: inline; }
   .hero { padding: 12px 10px 8px; }
 }
 </style>
@@ -159,6 +167,7 @@ footer a { color: inherit; }
     <div class="legend">
       <button type="button" class="toggle" data-series="tb1" aria-pressed="true"><i class="sw" style="background:var(--tb1)"></i>TB1</button>
       <button type="button" class="toggle" data-series="tb2" aria-pressed="true"><i class="sw" style="background:var(--tb2)"></i>TB2</button>
+      <button type="button" class="toggle" data-series="tb3" aria-pressed="true"><i class="sw" style="background:var(--tb3)"></i>TB3</button>
       <button type="button" class="toggle" data-series="tb4" aria-pressed="true"><i class="sw" style="background:var(--tb4)"></i>TB4</button>
       <span><svg width="26" height="6" aria-hidden="true"><line x1="0" y1="3" x2="26" y2="3" style="stroke:var(--ink-2)"/></svg>Austria</span>
       <span><svg width="26" height="6" aria-hidden="true"><line x1="0" y1="3" x2="26" y2="3" style="stroke:var(--ink-2)" stroke-dasharray="5 3"/></svg>Germany-Luxembourg</span>
@@ -319,8 +328,8 @@ footer a { color: inherit; }
     { key: 'AT', name: 'Austria', short: 'AT', dash: null },
     { key: 'DE_LU', name: 'Germany-Luxembourg', short: 'DE-LU', dash: '5 3' },
   ];
-  const SERIES = [['tb1', 'TB1', '--tb1'], ['tb2', 'TB2', '--tb2'], ['tb4', 'TB4', '--tb4']];
-  const state = { gran: 'weekly', range: '1095', zone: 'both', on: { tb1: true, tb2: true, tb4: true } };
+  const SERIES = [['tb1', 'TB1', '--tb1'], ['tb2', 'TB2', '--tb2'], ['tb3', 'TB3', '--tb3'], ['tb4', 'TB4', '--tb4']];
+  const state = { gran: 'weekly', range: '1095', zone: 'both', on: { tb1: true, tb2: true, tb3: true, tb4: true } };
   const fmt = (v) => (v == null || !Number.isFinite(v) ? '—' : d3.format(',.1f')(v));
   const dayFmt = d3.utcFormat('%-d %b %Y');
   const toDate = (s) => new Date(s + 'T00:00:00Z');
@@ -330,16 +339,16 @@ footer a { color: inherit; }
   let daily = {}; // market -> [{date, tb1, tb2, tb4, avg}]
   let agg = {};   // market -> {daily, weekly, monthly, yearly}
 
-  function mean(rows, k) { return rows.length ? rows.reduce((a, r) => a + r[k], 0) / rows.length : null; }
+  function mean(rows, k) { const v = rows.map((r) => r[k]).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; }
   function group(rows, keyFn) {
     const m = new Map();
     for (const r of rows) { const k = keyFn(r.date); if (!m.has(k)) m.set(k, []); m.get(k).push(r); }
-    return [...m].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([key, rs]) => ({ key, days: rs.length, tb1: mean(rs, 'tb1'), tb2: mean(rs, 'tb2'), tb4: mean(rs, 'tb4') }));
+    return [...m].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([key, rs]) => ({ key, days: rs.length, tb1: mean(rs, 'tb1'), tb2: mean(rs, 'tb2'), tb3: mean(rs, 'tb3'), tb4: mean(rs, 'tb4') }));
   }
   const weekOf = (s) => { const t = toDate(s); return new Date(t.getTime() - ((t.getUTCDay() + 6) % 7) * 86400000).toISOString().slice(0, 10); };
   function avgBetween(mkt, from, to) {
     const rs = daily[mkt].filter((r) => r.date >= from && r.date <= to);
-    return { days: rs.length, tb1: mean(rs, 'tb1'), tb2: mean(rs, 'tb2'), tb4: mean(rs, 'tb4') };
+    return { days: rs.length, tb1: mean(rs, 'tb1'), tb2: mean(rs, 'tb2'), tb3: mean(rs, 'tb3'), tb4: mean(rs, 'tb4') };
   }
 
   // ---------- chart ----------
@@ -359,7 +368,7 @@ footer a { color: inherit; }
     const ACTIVE = SERIES.filter(([k]) => state.on[k]);
     const y = d3.scaleLinear().domain([0, (d3.max(all, (r) => d3.max(ACTIVE, ([k]) => r[k])) || 1) * 1.05]).nice().range([H - 26, 8]);
     const svg = d3.select(el).append('svg').attr('width', W).attr('height', H).attr('role', 'img')
-      .attr('aria-label', `${state.gran} TB1, TB2 and TB4 day-ahead spreads in euros per MWh for ${markets.map((m) => m.name).join(' and ')}`);
+      .attr('aria-label', `${state.gran} TB1 to TB4 day-ahead spreads in euros per MWh for ${markets.map((m) => m.name).join(' and ')}`);
     const yAxis = svg.append('g').call(d3.axisLeft(y).ticks(6).tickSize(0).tickFormat(d3.format(',.0f')));
     let ml = 0; yAxis.selectAll('text').each(function () { ml = Math.max(ml, this.getComputedTextLength()); });
     ml = Math.ceil(ml) + 10;
@@ -425,7 +434,7 @@ footer a { color: inherit; }
     const r1 = thead.insertRow(), r2 = thead.insertRow();
     const th = (row, text, cls, span) => { const c = document.createElement('th'); c.textContent = text; if (cls) c.className = cls; if (span) c.colSpan = span; row.append(c); };
     const extra = opts.extraCols || [];
-    th(r1, ''); extra.forEach(() => th(r1, '')); MARKETS.forEach((m) => th(r1, m.name, 'grp sep', 4));
+    th(r1, ''); extra.forEach(() => th(r1, '')); MARKETS.forEach((m) => th(r1, m.name, 'grp sep', SERIES.length + 1));
     th(r2, firstCol); extra.forEach((e) => th(r2, e[0]));
     MARKETS.forEach(() => { th(r2, 'Days', 'sep'); SERIES.forEach(([, n]) => th(r2, n)); });
     const tb = t.createTBody();
@@ -464,7 +473,7 @@ footer a { color: inherit; }
     SERIES.forEach(([, n, c]) => { const sw = document.createElement('i'); sw.className = 'sw'; sw.style.background = `var(${c})`; add('colh', sw, n); });
     for (const m of MARKETS) {
       const r = daily[m.key].find((d) => d.date === last), a = avgBetween(m.key, addDays(last, -29), last);
-      const name = document.createElement('div'); name.textContent = m.name;
+      const name = document.createElement('div'); name.append(Object.assign(document.createElement('span'), { className: 'long', textContent: m.name }), Object.assign(document.createElement('span'), { className: 'short', textContent: m.key === 'AT' ? 'Austria' : 'Germany' }));
       const small = document.createElement('small'); small.textContent = m.dash ? 'dashed line' : 'solid line';
       add('mkt', name, small);
       SERIES.forEach(([k]) => { const s = document.createElement('small'); s.textContent = `30-day ${fmt(a[k])}`; add('num', fmt(r[k]), s); });
@@ -541,10 +550,10 @@ footer a { color: inherit; }
     .then((d) => {
       window.__updated = d.updated;
       for (const m of MARKETS) {
-        daily[m.key] = (d.markets[m.key] || []).map(([date, tb1, tb2, tb4, avg]) => ({ date, tb1, tb2, tb4, avg }));
+        daily[m.key] = (d.markets[m.key] || []).map(([date, tb1, tb2, tb4, avg, tb3]) => ({ date, tb1, tb2, tb3: tb3 ?? null, tb4, avg }));
         const rows = daily[m.key];
         agg[m.key] = {
-          daily: rows.map((r) => ({ key: r.date, days: 1, tb1: r.tb1, tb2: r.tb2, tb4: r.tb4 })),
+          daily: rows.map((r) => ({ key: r.date, days: 1, tb1: r.tb1, tb2: r.tb2, tb3: r.tb3, tb4: r.tb4 })),
           weekly: group(rows, weekOf), monthly: group(rows, (s) => s.slice(0, 7)), yearly: group(rows, (s) => s.slice(0, 4)),
         };
       }
