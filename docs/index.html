@@ -227,8 +227,9 @@ footer a { color: inherit; }
   <div class="panel" id="panel-da" role="tabpanel" aria-labelledby="tab-da">
     <p class="lede" id="da-lede">Loading the latest prices…</p>
     <div class="hero">
-      <h2>The last eight delivery days</h2>
-      <p class="sub">Day-ahead prices at the resolution they were auctioned in, €/MWh.</p>
+      <h2>Latest delivery days</h2>
+      <p class="sub">Day-ahead prices at the resolution they were auctioned in, €/MWh, Central European time.</p>
+      <div class="controls" id="recent-controls"></div>
       <div class="chart" id="da-recent-chart"></div>
       <div class="legend" data-legend="markets"></div>
     </div>
@@ -627,7 +628,7 @@ footer a { color: inherit; }
   const marketLegend = MARKETS.map((m) => ({ label: m.name, dash: m.dash }));
 
   // Generic line chart: lines = [{m, rows:[{x, ...}]}], series = [[key, label, cssVar]]
-  function lineChart(el, { lines, series, unit, label, ticks: tickMode }) {
+  function lineChart(el, { lines, series, unit, label, ticks: tickMode, dayStarts, dayLabel }) {
     el.replaceChildren();
     const all = lines.flatMap((l) => l.rows);
     const vals = all.flatMap((r) => series.map(([k]) => r[k])).filter((v) => v != null && Number.isFinite(v));
@@ -647,7 +648,8 @@ footer a { color: inherit; }
     const x = d3.scaleUtc().domain(ext).range([ml + 4, W - 8]);
     const room = Math.max(2, Math.floor((W - ml) / 80));
     let ticks, tf;
-    if (tickMode === 'days') { ticks = d3.utcDay.every(Math.max(1, Math.ceil(8 / room))); tf = d3.timeFormat('%a %-d %b'); }
+    if (dayStarts) { const k = [1, 2, 3, 7].find((v) => dayStarts.length / v <= room) || 7; ticks = dayStarts.filter((d, i) => i % k === 0); tf = dayLabel; }
+    else if (tickMode === 'days') { ticks = d3.utcDay.every(Math.max(1, Math.ceil(8 / room))); tf = d3.timeFormat('%a %-d %b'); }
     else {
       const spanYears = (ext[1] - ext[0]) / (365.25 * 86400000);
       const spanDays = (ext[1] - ext[0]) / 86400000;
@@ -655,7 +657,7 @@ footer a { color: inherit; }
       else if (spanYears > 2) { ticks = d3.utcYear.every(Math.max(1, Math.ceil((spanYears + 1) / room))); tf = d3.utcFormat('%Y'); }
       else { const mo = Math.max(1, Math.round(spanYears * 12)); ticks = d3.utcMonth.every([1, 2, 3, 6, 12].find((k) => mo / k <= room) || 12); tf = d3.utcFormat('%b %y'); }
     }
-    svg.append('g').attr('transform', `translate(0,${H - 26})`).call(d3.axisBottom(x).ticks(ticks).tickSizeOuter(0).tickFormat(tf));
+    svg.append('g').attr('transform', `translate(0,${H - 26})`).call((Array.isArray(ticks) ? d3.axisBottom(x).tickValues(ticks) : d3.axisBottom(x).ticks(ticks)).tickSizeOuter(0).tickFormat(tf));
     for (const l of lines) {
       series.forEach(([k, , c]) => {
         svg.append('path').datum(l.rows).attr('fill', 'none').attr('stroke', css(c))
@@ -836,12 +838,28 @@ footer a { color: inherit; }
     drawDA = chartBlock(document.querySelector('[data-chart=da]'), { grouped, unit: '€/MWh', title: 'day-ahead price statistics',
       series: [['mean', 'Mean', '--tb1'], ['median', 'Median', '--tb2'], ['min', 'Min', '--tb4'], ['max', 'Max', '--ink-2']], off: ['min', 'max'] });
     legend(document.querySelector('#panel-da [data-legend=markets]'), marketLegend);
-    drawRecent = () => {
+    // Latest delivery days, read from the stored price history (Central European time)
+    const vienna = (opts) => new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Vienna', ...opts });
+    const vHour = vienna({ hour: '2-digit', hourCycle: 'h23' });
+    const vTip = vienna({ weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    const vDay = vienna({ weekday: 'short', day: 'numeric', month: 'short' });
+    const midnight = (date) => { let t = Date.parse(date + 'T00:00:00Z') - 3600e3; if (Number(vHour.format(t)) !== 0) t -= 3600e3; return t; };
+    const rst = { n: 7 };
+    document.getElementById('recent-controls').replaceChildren(
+      seg('Delivery days', [[7, 'Last 7 days'], [10, 'Last 10 days'], [30, 'Last 30 days']], 7, (v) => { rst.n = v; drawRecent(); }));
+    drawRecent = async () => {
       const el = document.getElementById('da-recent-chart');
       if (el.closest('.panel').hidden) return;
-      const fmtT = d3.timeFormat('%a %-d %b, %H:%M');
-      const lines = MARKETS.map((m) => ({ m, rows: (recent.markets[m.key] || []).map(([t, p]) => { const x = new Date(t); return { x, price: p, label: fmtT(x) }; }) }));
-      lineChart(el, { lines, series: [['price', 'Price', '--tb1']], unit: '€/MWh', ticks: 'days', label: 'Day-ahead prices for the last eight delivery days, Austria solid and Germany-Luxembourg dashed' });
+      const lastDay = d3.max(MARKETS, (m) => grouped[m.key].daily.at(-1)?.key);
+      const from = addDays(lastDay, -(rst.n - 1));
+      const sets = await Promise.all(MARKETS.map((m) => getDays(m.key, from, lastDay)));
+      const lines = MARKETS.map((m, mi) => ({ m, rows: sets[mi].flatMap((d) => {
+        const t0 = midnight(d.date);
+        return d.prices.map((p, i) => { const x = new Date(t0 + i * d.minutes * 60000); return { x, price: p, label: vTip.format(x) }; });
+      }) }));
+      const dayStarts = d3.range(rst.n).map((i) => new Date(midnight(addDays(from, i))));
+      lineChart(el, { lines, series: [['price', 'Price', '--tb1']], unit: '€/MWh', dayStarts, dayLabel: (d) => vDay.format(d),
+        label: `Day-ahead prices for the last ${rst.n} delivery days, Austria solid and Germany-Luxembourg dashed` });
     };
     // statistics table
     const tstate = { gran: 'monthly', zone: 'AT' };
