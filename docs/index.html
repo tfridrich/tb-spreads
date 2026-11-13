@@ -125,13 +125,13 @@ footer a { color: inherit; }
   <header>
     <h1>Day-ahead and balancing prices, Austria and Germany</h1>
     <nav class="tabs" role="tablist" aria-label="Sections">
-      <button type="button" role="tab" id="tab-tb" aria-controls="panel-tb" aria-selected="true">TB spreads</button>
-      <button type="button" role="tab" id="tab-da" aria-controls="panel-da" aria-selected="false" tabindex="-1">Day-ahead prices</button>
+      <button type="button" role="tab" id="tab-da" aria-controls="panel-da" aria-selected="true">Day-ahead prices</button>
+      <button type="button" role="tab" id="tab-tb" aria-controls="panel-tb" aria-selected="false" tabindex="-1">TB spreads</button>
       <button type="button" role="tab" id="tab-bal" aria-controls="panel-bal" aria-selected="false" tabindex="-1">FCR and aFRR</button>
     </nav>
   </header>
 
-  <div class="panel" id="panel-tb" role="tabpanel" aria-labelledby="tab-tb">
+  <div class="panel" id="panel-tb" role="tabpanel" aria-labelledby="tab-tb" hidden>
   <p class="lede" id="lede">Loading the latest prices…</p>
   <div class="hero" id="trend">
     <div class="controls">
@@ -147,6 +147,8 @@ footer a { color: inherit; }
         <button type="button" data-zone="DE_LU" aria-pressed="false">Germany</button>
       </div>
       <div class="seg" role="group" aria-label="Time range" id="range-seg">
+        <button type="button" data-range="10" aria-pressed="false">10 days</button>
+        <button type="button" data-range="30" aria-pressed="false">30 days</button>
         <button type="button" data-range="90" aria-pressed="false">90 days</button>
         <button type="button" data-range="365" aria-pressed="false">1 year</button>
         <button type="button" data-range="1095" aria-pressed="true">3 years</button>
@@ -222,7 +224,7 @@ footer a { color: inherit; }
   </ul>
   </div>
 
-  <div class="panel" id="panel-da" role="tabpanel" aria-labelledby="tab-da" hidden>
+  <div class="panel" id="panel-da" role="tabpanel" aria-labelledby="tab-da">
     <p class="lede" id="da-lede">Loading the latest prices…</p>
     <div class="hero">
       <h2>The last eight delivery days</h2>
@@ -232,7 +234,7 @@ footer a { color: inherit; }
     </div>
     <section>
       <h2>Prices over time</h2>
-      <p class="sub">€/MWh. Mean, median, lowest and highest price of each day, week, month or year. Switch lines on and off below the chart.</p>
+      <p class="sub">€/MWh. Mean, median, min and max price of each day, week, month or year. Switch lines on and off below the chart.</p>
       <div class="hero" data-chart="da">
         <div class="controls" data-controls></div>
         <div class="chart"></div>
@@ -256,7 +258,7 @@ footer a { color: inherit; }
         <p class="sub">Each line is one day, coloured from the start (light) to the end (dark) of the period; the thick line is the average. €/MWh, Central European time.</p>
         <div class="chart" id="da-overlay"></div>
         <h2 style="margin-top:22px">Heatmap</h2>
-        <p class="sub">One row per day, €/MWh, Central European time. Colours run from the lowest to the highest price in the period; hover for values.</p>
+        <p class="sub">One row per day, €/MWh, Central European time. Colours run from the min to the max price in the period; hover for values.</p>
         <div class="chart heat" id="da-heatmap"></div>
       </div>
       <div class="hero" style="margin-top:18px">
@@ -368,7 +370,9 @@ footer a { color: inherit; }
     const spanYears = (ext[1] - ext[0]) / (365.25 * 86400000);
     const room = Math.max(2, Math.floor((W - ml) / 80));
     let ticks, tf;
-    if (spanYears > 2) { ticks = d3.utcYear.every(Math.max(1, Math.ceil((spanYears + 1) / room))); tf = d3.utcFormat('%Y'); }
+    const spanDays = (ext[1] - ext[0]) / 86400000;
+    if (spanDays <= 75) { { const k = [1, 2, 3, 7, 14].find((v) => spanDays / v <= room) || 14, d0 = d3.utcDay.floor(ext[0]); ticks = d3.utcDay.filter((d) => d3.utcDay.count(d0, d) % k === 0); } tf = d3.utcFormat('%-d %b'); }
+    else if (spanYears > 2) { ticks = d3.utcYear.every(Math.max(1, Math.ceil((spanYears + 1) / room))); tf = d3.utcFormat('%Y'); }
     else { const mo = Math.max(1, Math.round(spanYears * 12)); ticks = d3.utcMonth.every([1, 2, 3, 6, 12].find((k) => mo / k <= room) || 12); tf = d3.utcFormat('%b %y'); }
     svg.append('g').attr('transform', `translate(0,${H - 26})`).call(d3.axisBottom(x).ticks(ticks).tickSizeOuter(0).tickFormat(tf));
     for (const l of lines) {
@@ -526,6 +530,7 @@ footer a { color: inherit; }
     if (p === 'w') { const wy = mo >= 4 ? y - 1 : y - 2; f.value = `${wy}-10-01`; t.value = `${wy + 1}-03-31`; }
     renderCustom(last);
   }));
+  window.tbDrawChart = () => { if (daily.AT && !document.getElementById('panel-tb').hidden) drawChart(); };
   let resizeT; new ResizeObserver(() => { clearTimeout(resizeT); resizeT = setTimeout(() => daily.AT && drawChart(), 120); }).observe(document.getElementById('chart'));
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => daily.AT && drawChart());
 
@@ -564,7 +569,7 @@ footer a { color: inherit; }
     });
     if (focus) tab.focus();
     const key = tab.id.replace('tab-', '');
-    history.replaceState(null, '', key === 'tb' ? location.pathname + location.search.replace(/[?&]tab=[^&]*/, '') : '#' + key);
+    history.replaceState(null, '', key === 'da' ? location.pathname + location.search.replace(/[?&]tab=[^&]*/, '') : '#' + key);
     redraw(key);
   }
   tabs.forEach((t, i) => {
@@ -645,7 +650,9 @@ footer a { color: inherit; }
     if (tickMode === 'days') { ticks = d3.utcDay.every(Math.max(1, Math.ceil(8 / room))); tf = d3.timeFormat('%a %-d %b'); }
     else {
       const spanYears = (ext[1] - ext[0]) / (365.25 * 86400000);
-      if (spanYears > 2) { ticks = d3.utcYear.every(Math.max(1, Math.ceil((spanYears + 1) / room))); tf = d3.utcFormat('%Y'); }
+      const spanDays = (ext[1] - ext[0]) / 86400000;
+      if (spanDays <= 75) { { const k = [1, 2, 3, 7, 14].find((v) => spanDays / v <= room) || 14, d0 = d3.utcDay.floor(ext[0]); ticks = d3.utcDay.filter((d) => d3.utcDay.count(d0, d) % k === 0); } tf = d3.utcFormat('%-d %b'); }
+      else if (spanYears > 2) { ticks = d3.utcYear.every(Math.max(1, Math.ceil((spanYears + 1) / room))); tf = d3.utcFormat('%Y'); }
       else { const mo = Math.max(1, Math.round(spanYears * 12)); ticks = d3.utcMonth.every([1, 2, 3, 6, 12].find((k) => mo / k <= room) || 12); tf = d3.utcFormat('%b %y'); }
     }
     svg.append('g').attr('transform', `translate(0,${H - 26})`).call(d3.axisBottom(x).ticks(ticks).tickSizeOuter(0).tickFormat(tf));
@@ -701,7 +708,7 @@ footer a { color: inherit; }
   function chartBlock(block, { data, grouped, series, unit, title, gran = 'weekly', range = '1095', off = [] }) {
     const st = { gran, range, zone: 'both', on: Object.fromEntries(series.map(([k]) => [k, !off.includes(k)])) };
     const ctr = block.querySelector('[data-controls]');
-    const rangeSeg = seg('Time range', [['90', '90 days'], ['365', '1 year'], ['1095', '3 years'], ['all', 'All']], st.range, (v) => { st.range = v; draw(); });
+    const rangeSeg = seg('Time range', [['10', '10 days'], ['30', '30 days'], ['90', '90 days'], ['365', '1 year'], ['1095', '3 years'], ['all', 'All']], st.range, (v) => { st.range = v; draw(); });
     ctr.replaceChildren(
       seg('Resolution', [['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['yearly', 'Yearly']], st.gran, (v) => { st.gran = v; rangeSeg.hidden = v === 'yearly'; draw(); }),
       seg('Markets', [['both', 'Both'], ['AT', 'Austria'], ['DE_LU', 'Germany']], st.zone, (v) => { st.zone = v; draw(); }),
@@ -827,7 +834,7 @@ footer a { color: inherit; }
     const rows = (zone, g) => (st.markets[zone]?.[g] || []).map((r) => Object.fromEntries(cols.map((c, i) => [c === 'period' ? 'key' : c, r[i]])));
     const grouped = {}; for (const m of MARKETS) grouped[m.key] = Object.fromEntries(['daily', 'weekly', 'monthly', 'yearly'].map((g) => [g, rows(m.key, g)]));
     drawDA = chartBlock(document.querySelector('[data-chart=da]'), { grouped, unit: '€/MWh', title: 'day-ahead price statistics',
-      series: [['mean', 'Mean', '--tb1'], ['median', 'Median', '--tb2'], ['min', 'Lowest', '--tb4'], ['max', 'Highest', '--ink-2']], off: ['min', 'max'] });
+      series: [['mean', 'Mean', '--tb1'], ['median', 'Median', '--tb2'], ['min', 'Min', '--tb4'], ['max', 'Max', '--ink-2']], off: ['min', 'max'] });
     legend(document.querySelector('#panel-da [data-legend=markets]'), marketLegend);
     drawRecent = () => {
       const el = document.getElementById('da-recent-chart');
@@ -842,7 +849,7 @@ footer a { color: inherit; }
     const drawTable = () => {
       const t = document.getElementById('da-stats'); t.replaceChildren();
       const head = t.createTHead().insertRow();
-      ['Period', 'Days', 'Mean', 'Median', 'Lowest', 'Highest', 'Std dev', 'Negative hours'].forEach((h) => { const c = document.createElement('th'); c.textContent = h; head.append(c); });
+      ['Period', 'Days', 'Mean', 'Median', 'Min', 'Max', 'Std dev', 'Negative hours'].forEach((h) => { const c = document.createElement('th'); c.textContent = h; head.append(c); });
       const body = t.createTBody();
       for (const r of grouped[tstate.zone][tstate.gran].slice().reverse().slice(0, tstate.gran === 'daily' ? 120 : 1000)) {
         const tr = body.insertRow(); tr.insertCell().textContent = fmtKey[tstate.gran](r.key); tr.insertCell().textContent = r.days;
@@ -874,7 +881,7 @@ footer a { color: inherit; }
   function periodTable(at, de) {
     const t = document.getElementById('da-period-stats'); t.replaceChildren();
     const head = t.createTHead().insertRow();
-    ['', 'Days', 'Mean', 'Median', 'Lowest', 'Highest', 'Std dev', 'Negative hours'].forEach((h) => { const c = document.createElement('th'); c.textContent = h; head.append(c); });
+    ['', 'Days', 'Mean', 'Median', 'Min', 'Max', 'Std dev', 'Negative hours'].forEach((h) => { const c = document.createElement('th'); c.textContent = h; head.append(c); });
     const body = t.createTBody();
     [['Austria', at], ['Germany-Luxembourg', de]].forEach(([n, days]) => {
       const s = stats(days), tr = body.insertRow(); tr.insertCell().textContent = n;
@@ -919,7 +926,7 @@ footer a { color: inherit; }
         const hh = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
         tip.replaceChildren(Object.assign(document.createElement('div'), { className: 'tip-date', textContent: `${hh(i * 15)}–${hh(i * 15 + 15)} · €/MWh` }));
         const g = document.createElement('div'); g.className = 'tip-grid'; g.style.gridTemplateColumns = 'auto auto';
-        [['Average', d3.mean(vals)], ['Lowest', d3.min(vals)], ['Highest', d3.max(vals)]].forEach(([k, v]) => { g.append(Object.assign(document.createElement('div'), { textContent: k }), Object.assign(document.createElement('div'), { className: 'v', textContent: fmt(v, 2) })); });
+        [['Mean', d3.mean(vals)], ['Min', d3.min(vals)], ['Max', d3.max(vals)]].forEach(([k, v]) => { g.append(Object.assign(document.createElement('div'), { textContent: k }), Object.assign(document.createElement('div'), { className: 'v', textContent: fmt(v, 2) })); });
         tip.append(g); tip.hidden = false;
         const px = x(i / 4), tw = tip.offsetWidth; tip.style.left = (px + 14 + tw > W ? Math.max(0, px - tw - 14) : px + 14) + 'px';
       })
@@ -1094,7 +1101,7 @@ footer a { color: inherit; }
 
   function redraw(key) {
     if (key === 'da') { drawRecent && drawRecent(); drawDA && drawDA(); drawPeriod && drawPeriod(); }
-    if (key === 'tb') { drawLadder && drawLadder(); }
+    if (key === 'tb') { window.tbDrawChart && window.tbDrawChart(); drawLadder && drawLadder(); }
     if (key === 'bal') { drawCap && drawCap(); drawEn && drawEn(); }
   }
   let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { redraw('tb'); redraw('da'); redraw('bal'); }, 150); });
