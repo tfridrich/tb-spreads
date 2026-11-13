@@ -215,7 +215,8 @@ def fetch_day_ahead(token, zone, first_day, last_day):
             continue  # complete delivery days only (23/24/25 h)
         s = sorted(p for _, p in hp)
         mean = lambda a: sum(a) / len(a)
-        tb[d.isoformat()] = [d.isoformat()] + [round(mean(s[-x:]) - mean(s[:x]), 2) for x in (1, 2, 4)] + [round(mean(s), 2)]
+        # row: date, TB1, TB2, TB4, average price, TB3 (TB3 added later, so it sits at the end)
+        tb[d.isoformat()] = [d.isoformat()] + [round(mean(s[-x:]) - mean(s[:x]), 2) for x in (1, 2, 4)] + [round(mean(s), 2), round(mean(s[-3:]) - mean(s[:3]), 2)]
     return tb, native
 
 
@@ -433,6 +434,16 @@ def main():
         for d, row in new_tb.items():
             if tb_rows.get(d) != row:
                 tb_rows[d] = row; changed += 1
+        # fill in TB3 for stored days that do not have it yet, from the stored price history
+        missing = [d for d, r in tb_rows.items() if len(r) < 6]
+        if missing:
+            prices = load_prices(zone)
+            for d in missing:
+                if d in prices:
+                    m, p = prices[d]
+                    h = sorted(p if m == 60 else [sum(p[i:i + 60 // m]) / (60 // m) for i in range(0, len(p), 60 // m)])
+                    tb_rows[d] = tb_rows[d][:5] + [round(sum(h[-3:]) / 3 - sum(h[:3]) / 3, 2)]
+                    changed += 1
         tb["markets"][zone] = [tb_rows[d] for d in sorted(tb_rows)]
         if native:
             latest = max(native).astimezone(MARKET_TZ).date()
